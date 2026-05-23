@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>GR-ER · Ground Rescue — Episode Runner</title>
+<meta name="viewport" content="width=1280" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500;1,6..72,600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:        #f4f1ea;
+    --bg-1:      #ece7da;
+    --bg-2:      #ddd6c4;
+    --ink:       #14110e;
+    --ink-mid:   #4a443a;
+    --ink-dim:   #837c6f;
+    --ink-faint: #c2bbac;
+    --rule:      #c2bbac;
+    --rule-soft: #d8d2c4;
+    --red:       #c41e1a;
+    --red-dim:   #7a1311;
+    --red-ink:   #fff;
+    --ok:        #2a2622;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink); }
+  body{
+    font-family:'Newsreader', Georgia, serif;
+    font-size:14px; line-height:1.5;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:1000;
+    background:repeating-linear-gradient(0deg, transparent 0 3px, rgba(20,17,14,.012) 3px 4px);
+    mix-blend-mode:multiply;
+  }
+  .mono{ font-family:'JetBrains Mono', ui-monospace, monospace; font-feature-settings:'tnum' 1,'zero' 1; font-optical-sizing:none; }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    display:grid;
+    grid-template-columns: 280px 1fr 280px;
+    align-items:stretch;
+    border-bottom:1px solid var(--rule);
+    background:var(--bg);
+  }
+  .topbar > div{ padding:10px 18px; display:flex; align-items:center; gap:14px; }
+  .topbar > div + div{ border-left:1px solid var(--rule); }
+  .brand{ gap:10px; }
+  .brand-mark{
+    width:22px; height:22px; flex:0 0 22px;
+    background:repeating-linear-gradient(45deg, var(--red) 0 2px, transparent 2px 4px),var(--bg);
+    border:1px solid var(--red);
+    box-shadow:inset 0 0 0 2px var(--bg);
+  }
+  .brand-name{ font-weight:600; letter-spacing:0; font-size:17px; font-style:italic; }
+  .brand-name em{ font-weight:400; color:var(--ink-mid); }
+  .brand-sub{ color:var(--ink-dim); font-size:11px; letter-spacing:.18em; text-transform:uppercase; font-family:'JetBrains Mono',monospace; font-weight:500; font-style:normal; }
+
+  .ep-state{ justify-content:center; gap:12px; }
+  .pill{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:5px 10px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px; letter-spacing:.12em;
+    border:1px solid var(--rule);
+    color:var(--ink-mid);
+    background:transparent;
+  }
+  .pill .dot{ width:7px; height:7px; background:var(--ink-faint); display:inline-block; }
+  .pill.is-running{ color:var(--red-ink); background:var(--red); border-color:var(--red); }
+  .pill.is-running .dot{ background:var(--red-ink); animation:blink 1.1s steps(2) infinite; }
+  .pill.is-ok{ color:var(--ok); border-color:var(--ink-mid); }
+  .pill.is-ok .dot{ background:var(--ok); }
+  .pill.is-fail{ color:var(--red); border-color:var(--red);
+    background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(196,30,26,.10) 5px 6px),transparent;
+  }
+  .pill.is-fail .dot{ background:var(--red); }
+  @keyframes blink{ 50%{ opacity:.25; } }
+
+  .clock{ justify-content:flex-end; gap:18px; color:var(--ink-mid); font-size:12px; }
+  .clock .lbl{ color:var(--ink-dim); letter-spacing:.18em; text-transform:uppercase; font-size:10px; font-style:normal; }
+  .clock .val{ color:var(--ink); font-family:'JetBrains Mono',monospace; }
+
+  /* ---------- main grid ---------- */
+  .main{
+    display:grid;
+    grid-template-columns: minmax(0,1.35fr) minmax(0,1fr);
+    min-height:calc(100vh - 47px);
+  }
+  .col{ display:flex; flex-direction:column; min-width:0; }
+  .col + .col{ border-left:1px solid var(--rule); }
+
+  .panel{ border-bottom:1px solid var(--rule); padding:18px 22px; }
+  .panel:last-child{ border-bottom:none; flex:1; }
+  .panel-hd{
+    display:flex; align-items:baseline; justify-content:space-between;
+    gap:14px; margin-bottom:12px;
+  }
+  .panel-hd h2{
+    margin:0; font-size:15px; font-weight:500;
+    letter-spacing:-.005em; color:var(--ink); font-style:italic;
+  }
+  .panel-hd h2 .tag{ font-style:normal; color:var(--ink-dim); font-weight:400; margin-left:4px; font-size:13px; }
+  .panel-hd .idx{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-dim); letter-spacing:.1em; }
+
+  /* ---------- command input ---------- */
+  .cmd-wrap{ display:grid; grid-template-columns:1fr auto; gap:0; align-items:stretch; border:1px solid var(--ink-faint); background:var(--bg-1); }
+  .cmd-prefix{
+    display:flex; align-items:center; padding:0 16px;
+    border-right:1px solid var(--ink-faint);
+    color:var(--red);
+    font-family:'JetBrains Mono',monospace; font-weight:600; font-size:18px; letter-spacing:.04em;
+  }
+  .cmd-input-row{ display:flex; align-items:stretch; min-width:0; }
+  .cmd-input{
+    flex:1; min-width:0;
+    background:transparent; border:0; outline:0; color:var(--ink);
+    font-family:'JetBrains Mono',monospace;
+    font-size:22px; font-weight:500; letter-spacing:.005em;
+    padding:18px 16px;
+    caret-color:var(--red);
+  }
+  .cmd-input::placeholder{ color:var(--ink-dim); font-weight:400; }
+  .cmd-input:disabled{ color:var(--ink-mid); }
+  .cmd-submit{
+    border:0; border-left:1px solid var(--ink-faint);
+    background:transparent; color:var(--ink);
+    padding:0 20px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px; font-weight:600; letter-spacing:.2em;
+    cursor:pointer;
+    display:flex; align-items:center; gap:10px;
+    white-space:nowrap;
+  }
+  .cmd-submit:hover:not(:disabled){ background:var(--red); color:var(--red-ink); border-left-color:var(--red); }
+  .cmd-submit:disabled{ color:var(--ink-dim); cursor:not-allowed; }
+  .cmd-submit .key{ font-size:10px; padding:2px 6px; border:1px solid currentColor; letter-spacing:.1em; }
+
+  .cmd-meta{
+    display:flex; gap:22px; margin-top:12px;
+    color:var(--ink-dim); font-size:13px;
+    font-family:'JetBrains Mono',monospace;
+  }
+  .cmd-meta b{ color:var(--ink); font-weight:500; }
+  .cmd-meta .sep{ color:var(--ink-faint); }
+
+  .quick{ display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+  .quick button{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px; letter-spacing:.04em;
+    background:transparent; color:var(--ink-mid);
+    border:1px dashed var(--rule); padding:6px 10px; cursor:pointer;
+  }
+  .quick button:hover{ color:var(--red); border-color:var(--red-dim); border-style:solid; }
+  .quick .lbl{ color:var(--ink-dim); font-size:13px; font-style:italic; padding:7px 4px 0 0; font-family:'Newsreader',serif; }
+
+  /* ---------- comms transcript ---------- */
+  .comms{
+    font-family:'JetBrains Mono',monospace;
+    font-size:13px; line-height:1.7;
+    background:linear-gradient(var(--bg-1),var(--bg-1)) padding-box;
+    border:1px solid var(--rule);
+    padding:14px 18px 16px;
+    height:360px;
+    overflow-y:auto; overflow-x:hidden;
+    scrollbar-width:thin; scrollbar-color:var(--ink-faint) transparent;
+  }
+  .comms::-webkit-scrollbar{ width:8px; }
+  .comms::-webkit-scrollbar-thumb{ background:var(--ink-faint); }
+  .comms .line{ display:grid; grid-template-columns:88px 64px 1fr; gap:14px; padding:2px 0; }
+  .comms .ts{ color:var(--ink-dim); }
+  .comms .src{ color:var(--red); font-weight:600; letter-spacing:.04em; }
+  .comms .src.sys{ color:var(--ink-dim); font-weight:500; }
+  .comms .src.bot{ color:var(--red-dim); }
+  .comms .msg{ color:var(--ink); white-space:pre-wrap; word-break:break-word; }
+  .comms .msg .k{ color:var(--ink-mid); }
+  .comms .msg .v{ color:var(--red); font-weight:500; }
+  .comms .msg .dim{ color:var(--ink-dim); }
+  .comms .msg .ok{ color:var(--ok); font-weight:600; }
+  .comms .msg .fail{ color:var(--red); font-weight:600; }
+  .caret{ display:inline-block; width:8px; height:14px; background:var(--red); vertical-align:-2px; animation:blink 1s steps(2) infinite; margin-left:1px; }
+
+  /* ---------- right column ---------- */
+  .target{
+    display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:18px;
+    padding:18px 22px;
+    border-bottom:1px solid var(--rule);
+    background:var(--bg-1);
+  }
+  .target-flag{ width:14px; height:30px; background:var(--ink-faint); }
+  .target.is-active .target-flag{ background:var(--red); }
+  .target-label{ font-size:13px; font-style:italic; color:var(--ink-dim); }
+  .target-name{ font-family:'JetBrains Mono',monospace; font-weight:600; font-size:20px; color:var(--ink); letter-spacing:.02em; margin-top:2px; }
+  .target.is-active .target-name{ color:var(--red); }
+  .target-coords{ font-family:'JetBrains Mono',monospace; font-size:14px; color:var(--ink-mid); text-align:right; }
+  .target-coords .x,.target-coords .y{ color:var(--ink); }
+
+  .metrics{ display:grid; grid-template-columns:1fr 1fr; }
+  .metric{ padding:18px 22px; border-bottom:1px solid var(--rule); }
+  .metric + .metric{ border-left:1px solid var(--rule); }
+  .metric:nth-child(odd){ border-left:none; }
+  .metric .lbl{
+    font-size:13px; color:var(--ink-mid); margin-bottom:8px;
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-style:italic;
+  }
+  .metric .lbl .mono{ font-style:normal; color:var(--ink-dim); font-size:11px; letter-spacing:.05em; }
+  .metric .val{ font-family:'JetBrains Mono',monospace; font-weight:600; font-size:32px; color:var(--ink); line-height:1; letter-spacing:-.01em; }
+  .metric .unit{ color:var(--ink-dim); font-size:13px; font-weight:500; margin-left:6px; letter-spacing:.04em; }
+  .metric .sub{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-dim); margin-top:6px; }
+  .metric .bar{ margin-top:10px; height:6px; background:var(--bg-2); position:relative; }
+  .metric .bar > i{ position:absolute; left:0; top:0; bottom:0; background:var(--red); width:0%; transition:width .1s; }
+  .metric .bar.is-budget > i{ background:var(--ink-mid); }
+
+  .survivors{ padding:18px 22px; border-bottom:1px solid var(--rule); }
+  .survivor-row{
+    display:grid; grid-template-columns:28px 1fr auto;
+    align-items:center; gap:14px; padding:12px 0;
+    border-bottom:1px dashed var(--rule);
+    font-family:'JetBrains Mono',monospace;
+  }
+  .survivor-row:last-child{ border-bottom:none; }
+  .survivor-row .mark{
+    width:18px; height:18px; display:flex; align-items:center; justify-content:center;
+    color:var(--ink-dim); border:1px solid var(--ink-faint); font-size:11px; font-weight:600;
+  }
+  .survivor-row.is-target .mark{ color:var(--red-ink); background:var(--red); border-color:var(--red); }
+  .survivor-row .who{ color:var(--ink); font-weight:600; letter-spacing:.05em; }
+  .survivor-row .meta{ color:var(--ink-dim); font-size:11px; letter-spacing:.06em; margin-top:2px; }
+  .survivor-row .pos{ color:var(--ink-mid); font-size:13px; }
+  .survivor-row.is-target .who{ color:var(--red); }
+
+  .result{
+    padding:22px; border-top:1px solid var(--rule);
+    flex:1; display:flex; flex-direction:column;
+    background:repeating-linear-gradient(135deg,transparent 0 9px,rgba(20,17,14,.035) 9px 10px),var(--bg);
+  }
+  .result-headline{
+    font-family:'Newsreader',serif;
+    font-size:36px; font-weight:500; letter-spacing:-.025em;
+    color:var(--ink-mid); line-height:1.05;
+    display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+    font-style:italic;
+  }
+  .result-headline .bracket{ color:var(--ink-faint); font-style:normal; font-weight:400; }
+  .result.is-running .result-headline{ color:var(--red); }
+  .result.is-running{ background:repeating-linear-gradient(135deg,transparent 0 9px,rgba(196,30,26,.10) 9px 10px),var(--bg); }
+  .result.is-ok .result-headline{ color:var(--ok); }
+  .result.is-fail .result-headline{ color:var(--red); }
+  .result.is-fail{ background:repeating-linear-gradient(135deg,transparent 0 9px,rgba(196,30,26,.10) 9px 10px),var(--bg); }
+  .result-sub{ margin-top:10px; color:var(--ink-dim); font-size:13px; font-style:italic; }
+  .result-sub .mono{ font-style:normal; }
+
+  .result-grid{ margin-top:22px; display:grid; grid-template-columns:1fr 1fr; gap:0; border-top:1px solid var(--rule); }
+  .result-grid .cell{ padding:14px 0; border-bottom:1px dashed var(--rule); }
+  .result-grid .cell:nth-child(odd){ padding-right:14px; border-right:1px dashed var(--rule); }
+  .result-grid .cell:nth-child(even){ padding-left:14px; }
+  .result-grid .cell:nth-last-child(-n+2){ border-bottom:none; }
+  .result-grid .k{ font-size:13px; color:var(--ink-dim); font-style:italic; }
+  .result-grid .v{ font-family:'JetBrains Mono',monospace; color:var(--ink); margin-top:4px; font-size:14px; }
+
+  .legend{
+    display:flex; justify-content:space-between; gap:18px;
+    padding:10px 18px; border-top:1px solid var(--rule);
+    background:var(--bg); font-size:12px; color:var(--ink-dim); font-style:italic;
+  }
+  .legend .kb{ display:flex; gap:18px; }
+  .legend .kb span b{ color:var(--ink); font-weight:500; font-style:normal; font-family:'JetBrains Mono',monospace; font-size:11px; padding:1px 5px; border:1px solid var(--rule); margin-right:4px; }
+  .legend .right{ font-family:'JetBrains Mono',monospace; font-style:normal; font-size:11px; letter-spacing:.04em; }
+
+  ::selection{ background:var(--red); color:var(--red-ink); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true"></div>
+    <div>
+      <div class="brand-name">GR-ER · <em>Ground Rescue</em></div>
+      <div class="brand-sub mono">EPISODE RUNNER · v0.4.2</div>
+    </div>
+  </div>
+  <div class="ep-state">
+    <span class="pill" id="state-pill"><span class="dot"></span><span id="state-text">EPISODE IDLE</span></span>
+    <span class="pill mono"><span class="dot"></span><span>GEMINI · GR-ER 1.5</span></span>
+    <span class="pill mono"><span class="dot"></span><span>SECTOR · D-14 / WAREHOUSE</span></span>
+  </div>
+  <div class="clock">
+    <div><span class="lbl">UTC</span> <span class="val mono" id="clock-utc">--:--:--</span></div>
+    <div><span class="lbl">EP</span> <span class="val mono" id="clock-ep">00:00.0</span></div>
+  </div>
+</header>
+
+<section class="main">
+  <!-- LEFT COLUMN -->
+  <div class="col">
+
+    <div class="panel">
+      <div class="panel-hd">
+        <h2>Command <span class="tag">— operator to robot</span></h2>
+        <span class="idx mono">[ 01 / CMD ]</span>
+      </div>
+
+      <form class="cmd-wrap" id="cmd-form" autocomplete="off">
+        <div class="cmd-prefix mono">&gt;</div>
+        <div class="cmd-input-row">
+          <input
+            id="cmd-input"
+            class="cmd-input mono"
+            type="text"
+            spellcheck="false"
+            autofocus
+            placeholder="issue prioritization order…"
+            aria-label="Operator command" />
+          <button type="submit" class="cmd-submit" id="cmd-submit">
+            DISPATCH <span class="key mono">↵</span>
+          </button>
+        </div>
+      </form>
+
+      <div class="cmd-meta mono">
+        <span><b>2</b> SURVIVORS DETECTED</span>
+        <span class="sep">/</span>
+        <span>STEP BUDGET <b>150</b></span>
+        <span class="sep">/</span>
+        <span>POLICY <b>PPO</b></span>
+        <span class="sep">/</span>
+        <span>NLP <b>GEMINI GR-ER 1.5</b></span>
+      </div>
+
+      <div class="quick">
+        <span class="lbl">RECENT</span>
+        <button type="button" data-cmd="save the child first">save the child first</button>
+        <button type="button" data-cmd="reach the closest survivor">reach the closest survivor</button>
+        <button type="button" data-cmd="prioritize the adult, child is mobile">prioritize the adult, child is mobile</button>
+        <button type="button" data-cmd="ignore adult, child only">ignore adult, child only</button>
+      </div>
+    </div>
+
+    <div class="panel" style="flex:1;display:flex;flex-direction:column;">
+      <div class="panel-hd">
+        <h2>Comms <span class="tag">— reasoning channel</span></h2>
+        <span class="idx mono">[ 02 / GR-ER ]</span>
+      </div>
+      <div class="comms mono" id="comms" role="log" aria-live="polite">
+<div class="line"><span class="ts" id="ts-init">--:--:--</span><span class="src sys">SYS  &gt;</span><span class="msg">link established · PPO policy loaded · awaiting order</span></div>
+<div class="line"><span class="ts" id="ts-init2">--:--:--</span><span class="src sys">SYS  &gt;</span><span class="msg">survivors detected: <span class="k">CHILD</span> @ <span class="v">(3.2, -1.5)</span> · <span class="k">ADULT</span> @ <span class="v">(-2.1, 4.3)</span></span></div>
+<div class="line"><span class="ts" id="ts-init3">--:--:--</span><span class="src sys">SYS  &gt;</span><span class="msg">robot pose <span class="v">(0.0, 0.0)</span> · heading <span class="v">000°</span> · MuJoCo viewer active</span></div>
+<div class="line awaiting"><span class="ts" id="ts-await">--:--:--</span><span class="src sys">SYS  &gt;</span><span class="msg"><span class="dim">awaiting dispatch</span><span class="caret"></span></span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="col">
+
+    <div class="panel" style="padding:0;">
+      <div class="target" id="target">
+        <div class="target-flag"></div>
+        <div>
+          <div class="target-label">Active Target</div>
+          <div class="target-name mono" id="target-name">—</div>
+        </div>
+        <div class="target-coords mono">
+          <div>x · <span class="x" id="target-x">—</span></div>
+          <div>y · <span class="y" id="target-y">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="lbl"><span>Steps Taken</span><span class="mono">/ 150</span></div>
+        <div class="val mono"><span id="m-steps">000</span></div>
+        <div class="bar is-budget"><i id="m-steps-bar"></i></div>
+        <div class="sub" id="m-steps-sub">budget 150 · idle</div>
+      </div>
+      <div class="metric">
+        <div class="lbl"><span>Distance</span><span class="mono">m</span></div>
+        <div class="val mono"><span id="m-dist">—</span><span class="unit">m</span></div>
+        <div class="bar"><i id="m-dist-bar" style="width:0%"></i></div>
+        <div class="sub" id="m-dist-sub">idle · L2 to target</div>
+      </div>
+      <div class="metric">
+        <div class="lbl"><span>Heading</span><span class="mono">deg</span></div>
+        <div class="val mono"><span id="m-heading">000</span><span class="unit">°</span></div>
+        <div class="sub mono" id="m-heading-sub">bearing to target · —</div>
+      </div>
+      <div class="metric">
+        <div class="lbl"><span>Episode Time</span><span class="mono">s</span></div>
+        <div class="val mono"><span id="m-time">00.0</span><span class="unit">s</span></div>
+        <div class="sub mono" id="m-time-sub">wall · since dispatch</div>
+      </div>
+    </div>
+
+    <div class="survivors">
+      <div class="panel-hd" style="margin:0 0 6px;">
+        <h2>Survivors <span class="tag">— static roster</span></h2>
+        <span class="idx mono">[ 2 ]</span>
+      </div>
+      <div class="survivor-row" id="row-child">
+        <div class="mark mono">C</div>
+        <div>
+          <div class="who">CHILD</div>
+          <div class="meta">approx 7yr · prone · responsive</div>
+        </div>
+        <div class="pos">(3.20, −1.50)</div>
+      </div>
+      <div class="survivor-row" id="row-adult">
+        <div class="mark mono">A</div>
+        <div>
+          <div class="who">ADULT</div>
+          <div class="meta">approx 40yr · seated · ambulatory</div>
+        </div>
+        <div class="pos">(−2.10, 4.30)</div>
+      </div>
+    </div>
+
+    <div class="result" id="result">
+      <div class="result-headline">
+        <span class="bracket">[</span>
+        <span id="result-text">awaiting dispatch</span>
+        <span class="bracket">]</span>
+      </div>
+      <div class="result-sub" id="result-sub">no episode in flight · last run: <span class="mono">—</span></div>
+
+      <div class="result-grid">
+        <div class="cell"><div class="k">Outcome</div><div class="v" id="r-outcome">—</div></div>
+        <div class="cell"><div class="k">Final Distance</div><div class="v" id="r-dist">—</div></div>
+        <div class="cell"><div class="k">Steps Used</div><div class="v" id="r-steps">—</div></div>
+        <div class="cell"><div class="k">Wall Time</div><div class="v" id="r-time">—</div></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<footer class="legend">
+  <div class="kb">
+    <span><b>↵</b> dispatch order</span>
+    <span><b>R</b> reset episode</span>
+    <span><b>1–4</b> recall order</span>
+    <span><b>Esc</b> halt</span>
+  </div>
+  <div class="right">NODE · FIELD-CMD-03 · LINK OK · LOG /var/gr-er/episodes/2026-05-23.jsonl</div>
+</footer>
+
+<script>
+(() => {
+  const SURVIVORS = {
+    CHILD: { x:  3.20, y: -1.50 },
+    ADULT: { x: -2.10, y:  4.30 },
+  };
+  const BUDGET = 150;
+
+  let robot = { x: 0, y: 0, heading: 0 };
+  let activeTarget = null;
+  let dispatching = false;
+  let simSteps = 0;
+  let t0 = 0;
+  let animRaf = null;
+  let lastOutcome = null;
+  let epCounter = 1000;
+
+  const $ = (id) => document.getElementById(id);
+  const sfmt = (n, d=2) => (n>=0?'':'−') + Math.abs(n).toFixed(d);
+  const pad = (n, w=3) => String(Math.floor(Math.abs(n))).padStart(w,'0');
+  const tsNow = () => {
+    const d = new Date();
+    return [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()]
+      .map(v => String(v).padStart(2,'0')).join(':');
+  };
+  const epClock = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = (sec % 60).toFixed(1);
+    return `${String(m).padStart(2,'0')}:${s.padStart(4,'0')}`;
+  };
+  const escapeHtml = (s) =>
+    s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // Init timestamps on boot
+  const nowTs = tsNow();
+  ['ts-init','ts-init2','ts-init3','ts-await'].forEach(id => {
+    const el = $(id); if (el) el.textContent = nowTs;
+  });
+
+  setInterval(() => { $('clock-utc').textContent = tsNow(); }, 1000);
+
+  // ---------- comms ---------------------------------------------------------
+  const comms = $('comms');
+  function clearAwaiting() { comms.querySelectorAll('.awaiting').forEach(n => n.remove()); }
+  function log(src, html, kind='bot') {
+    clearAwaiting();
+    const line = document.createElement('div');
+    line.className = 'line';
+    line.innerHTML = `<span class="ts">${tsNow()}</span><span class="src ${kind}">${src}</span><span class="msg">${html}</span>`;
+    comms.appendChild(line);
+    comms.scrollTop = comms.scrollHeight;
+  }
+  function logAwait(text='awaiting next order') {
+    const line = document.createElement('div');
+    line.className = 'line awaiting';
+    line.innerHTML = `<span class="ts">${tsNow()}</span><span class="src sys">SYS  &gt;</span><span class="msg"><span class="dim">${text}</span><span class="caret"></span></span>`;
+    comms.appendChild(line);
+    comms.scrollTop = comms.scrollHeight;
+  }
+
+  // ---------- NLP heuristic (local, shown immediately) ----------------------
+  function parseOrder(text) {
+    const t = text.toLowerCase();
+    const wantsChild = /\bchild|kid|minor|infant\b/.test(t);
+    const wantsAdult = /\badult|man|woman|person\b/.test(t);
+    const ignoreAdult = /\bignore adult|child only|skip adult\b/.test(t);
+    const ignoreChild = /\bignore child|adult only|skip child\b/.test(t);
+    const closest = /\bclosest|nearest|first|fastest\b/.test(t) && !wantsChild && !wantsAdult;
+    if (ignoreChild) return { target:'ADULT', why:'operator explicitly excluded CHILD' };
+    if (ignoreAdult) return { target:'CHILD', why:'operator explicitly excluded ADULT' };
+    if (wantsChild && !wantsAdult) return { target:'CHILD', why:'explicit operator instruction overrides nearest-first heuristic' };
+    if (wantsAdult && !wantsChild) return { target:'ADULT', why:'explicit operator instruction overrides nearest-first heuristic' };
+    if (closest) {
+      const dC = Math.hypot(SURVIVORS.CHILD.x, SURVIVORS.CHILD.y);
+      const dA = Math.hypot(SURVIVORS.ADULT.x, SURVIVORS.ADULT.y);
+      return dC < dA
+        ? { target:'CHILD', why:`nearest-first · CHILD ${dC.toFixed(2)}m < ADULT ${dA.toFixed(2)}m` }
+        : { target:'ADULT', why:`nearest-first · ADULT ${dA.toFixed(2)}m < CHILD ${dC.toFixed(2)}m` };
+    }
+    return { target:'CHILD', why:'no nearest-first cue · defaulting to CHILD per safeguard policy' };
+  }
+
+  // ---------- UI state ------------------------------------------------------
+  function setTarget(name) {
+    activeTarget = name;
+    const s = SURVIVORS[name];
+    $('target-name').textContent = name;
+    $('target-x').textContent = sfmt(s.x);
+    $('target-y').textContent = sfmt(s.y);
+    $('row-child').classList.toggle('is-target', name === 'CHILD');
+    $('row-adult').classList.toggle('is-target', name === 'ADULT');
+    $('target').classList.add('is-active');
+  }
+  function clearTarget() {
+    activeTarget = null;
+    $('target-name').textContent = '—';
+    $('target-x').textContent = '—';
+    $('target-y').textContent = '—';
+    $('row-child').classList.remove('is-target');
+    $('row-adult').classList.remove('is-target');
+    $('target').classList.remove('is-active');
+  }
+  function setStatePill(kind, text) {
+    const p = $('state-pill');
+    p.classList.remove('is-running','is-ok','is-fail');
+    if (kind) p.classList.add(kind);
+    $('state-text').textContent = text;
+    const r = $('result');
+    r.classList.remove('is-running','is-ok','is-fail');
+    if (kind) r.classList.add(kind);
+  }
+  function updateMetrics(dist) {
+    const elapsed = dispatching ? (performance.now() - t0) / 1000 : (lastOutcome ? lastOutcome.wall : 0);
+    $('m-steps').textContent = pad(simSteps, 3);
+    $('m-steps-bar').style.width = Math.min(100, simSteps / BUDGET * 100) + '%';
+    $('m-steps-sub').textContent = `budget ${BUDGET} · ${Math.max(0, BUDGET - simSteps)} remaining`;
+    if (dist !== undefined) {
+      $('m-dist').textContent = dist.toFixed(2);
+      const initDist = activeTarget ? Math.hypot(SURVIVORS[activeTarget].x, SURVIVORS[activeTarget].y) : 1;
+      $('m-dist-bar').style.width = Math.max(0, 100 - dist / initDist * 100).toFixed(1) + '%';
+      $('m-dist-sub').textContent = dispatching ? 'closing · L2 to target' : (dist < 0.5 ? 'on target' : 'idle · L2 to target');
+    }
+    if (activeTarget) {
+      const tgt = SURVIVORS[activeTarget];
+      const dx = tgt.x - robot.x, dy = tgt.y - robot.y;
+      const bearing = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+      $('m-heading').textContent = pad((robot.heading + 360) % 360, 3);
+      $('m-heading-sub').textContent = `bearing to target · ${sfmt(((bearing - robot.heading + 540) % 360) - 180, 1)}°`;
+    }
+    $('m-time').textContent = elapsed.toFixed(1);
+    $('clock-ep').textContent = epClock(elapsed);
+  }
+
+  // ---------- visual animation (runs during backend call) -------------------
+  function startAnimation(targetName) {
+    const tgt = SURVIVORS[targetName];
+    const totalDist = Math.hypot(tgt.x, tgt.y);
+    // Animate at ~1 step/100ms — fills time while backend runs
+    const stepMs = 100;
+    let logged25 = false, logged75 = false, loggedClose = false;
+    let localStep = 0;
+
+    const tick = () => {
+      if (!dispatching) return;
+      localStep++;
+      simSteps = localStep;
+      // Loop: approach and loop back so animation stays lively during long backend calls
+      const phase = localStep % (BUDGET + 20);
+      const p = Math.min(1, phase / Math.max(1, Math.ceil(totalDist * 22)));
+      const sway = Math.sin(p * Math.PI) * 0.25;
+      const perpX = -tgt.y / totalDist, perpY = tgt.x / totalDist;
+      robot.x = tgt.x * p + perpX * sway;
+      robot.y = tgt.y * p + perpY * sway;
+      const dx = tgt.x - robot.x, dy = tgt.y - robot.y;
+      robot.heading = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+      const dist = Math.hypot(dx, dy);
+      updateMetrics(dist);
+
+      if (!logged25 && p > 0.25) {
+        logged25 = true;
+        log('GR-ER&gt;', `<span class="dim">progress   →</span> 25% · pose <span class="v">(${robot.x.toFixed(2)}, ${robot.y.toFixed(2)})</span> · clearance ok`);
+      }
+      if (!logged75 && p > 0.6) {
+        logged75 = true;
+        log('GR-ER&gt;', `<span class="dim">obstacle   →</span> debris at <span class="v">(1.4, −0.6)</span> · skirting left · cost +<span class="v">3</span> cells`);
+      }
+      if (!loggedClose && p > 0.88) {
+        loggedClose = true;
+        log('GR-ER&gt;', `<span class="dim">approach   →</span> &lt; <span class="v">0.6m</span> · reducing speed · arm stabilizer`);
+      }
+
+      animRaf = setTimeout(tick, stepMs);
+    };
+    animRaf = setTimeout(tick, stepMs);
+  }
+
+  function stopAnimation() {
+    clearTimeout(animRaf);
+    animRaf = null;
+  }
+
+  // ---------- backend call --------------------------------------------------
+  async function callBackend(orderText) {
+    try {
+      const res = await fetch('/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: orderText }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      log('SYS  &gt;', `<span class="fail">backend error</span> · ${escapeHtml(err.message)} · running standalone`, 'sys');
+      return null;
+    }
+  }
+
+  // ---------- finish episode ------------------------------------------------
+  function finishEpisode(reached, finalSteps, finalDist) {
+    dispatching = false;
+    stopAnimation();
+    const wall = (performance.now() - t0) / 1000;
+    lastOutcome = { reached, wall, steps: finalSteps, dist: finalDist };
+
+    if (reached) {
+      setStatePill('is-ok', 'TARGET REACHED');
+      $('result-text').textContent = 'target reached';
+      log('GR-ER&gt;', `<span class="dim">result     →</span> <span class="ok">TARGET REACHED</span> · ${activeTarget} stabilized · steps <span class="v">${finalSteps}</span>/${BUDGET} · t <span class="v">${wall.toFixed(1)}s</span>`);
+    } else {
+      setStatePill('is-fail', 'TIMEOUT');
+      $('result-text').textContent = 'timeout — step budget exceeded';
+      log('GR-ER&gt;', `<span class="dim">result     →</span> <span class="fail">TIMEOUT</span> · ${activeTarget} not reached · steps <span class="v">${finalSteps}</span>/${BUDGET}`);
+    }
+
+    epCounter++;
+    $('result-sub').innerHTML = `episode <span class="mono">EP-${epCounter}</span> · target <span class="mono">${activeTarget}</span> · ended ${tsNow()}Z`;
+    $('r-outcome').textContent = reached ? 'reached · within tolerance' : 'timeout · budget exceeded';
+    $('r-dist').textContent = finalDist !== undefined ? finalDist.toFixed(2) + ' m' : '—';
+    $('r-steps').textContent = `${finalSteps} / ${BUDGET}`;
+    $('r-time').textContent = wall.toFixed(2) + ' s';
+
+    simSteps = finalSteps;
+    updateMetrics(finalDist);
+    $('cmd-submit').disabled = false;
+    $('cmd-input').disabled = false;
+    $('cmd-input').focus();
+    $('cmd-input').select();
+    logAwait('awaiting next order');
+  }
+
+  // ---------- dispatch ------------------------------------------------------
+  async function dispatch(orderText) {
+    if (dispatching) return;
+
+    // Optimistic local parse — shown immediately, Gemini may override
+    const localParse = parseOrder(orderText);
+    setTarget(localParse.target);
+
+    log('OP   &gt;', `<span class="dim">order</span> "${escapeHtml(orderText)}"`, 'sys');
+    log('GR-ER&gt;', `<span class="dim">local NLP  →</span> intent = <span class="v">prioritize.${localParse.target.toLowerCase()}</span>`);
+    log('GR-ER&gt;', `<span class="dim">heuristic  →</span> ${localParse.why}`);
+    log('GR-ER&gt;', `<span class="dim">gemini     →</span> sending to GR-ER 1.5 for final decision<span class="caret"></span>`);
+    log('SYS  &gt;', `<span class="dim">dispatching episode EP-${epCounter + 1} · MuJoCo active · awaiting result</span>`, 'sys');
+
+    dispatching = true;
+    simSteps = 0;
+    robot = { x: 0, y: 0, heading: 0 };
+    t0 = performance.now();
+    setStatePill('is-running', 'EPISODE RUNNING');
+    $('cmd-submit').disabled = true;
+    $('cmd-input').disabled = true;
+
+    // Start visual animation (runs while backend processes)
+    startAnimation(localParse.target);
+
+    // Call real backend (blocks until episode finishes, up to 30s)
+    const data = await callBackend(orderText);
+
+    stopAnimation();
+
+    if (data) {
+      // Gemini may have picked a different target than the local heuristic
+      const geminiTarget = data.target_id ? data.target_id.toUpperCase() : localParse.target;
+      if (geminiTarget !== activeTarget) {
+        setTarget(geminiTarget);
+        log('GR-ER&gt;', `<span class="dim">correction →</span> Gemini selected <span class="v">${geminiTarget}</span> · heuristic overridden`);
+      }
+      if (data.reason) {
+        log('GR-ER&gt;', `<span class="dim">reasoning  →</span> <span class="v">${geminiTarget}</span> · ${escapeHtml(data.reason)}`);
+      }
+      finishEpisode(!!data.reached, data.steps || simSteps, undefined);
+    } else {
+      // Backend unreachable — finish on animation state alone
+      finishEpisode(simSteps < BUDGET, simSteps, undefined);
+    }
+  }
+
+  // ---------- reset ---------------------------------------------------------
+  function reset() {
+    dispatching = false;
+    stopAnimation();
+    simSteps = 0;
+    robot = { x: 0, y: 0, heading: 0 };
+    lastOutcome = null;
+    clearTarget();
+    setStatePill('', 'EPISODE IDLE');
+    $('result-text').textContent = 'awaiting dispatch';
+    $('result-sub').innerHTML = 'no episode in flight · last run: <span class="mono">—</span>';
+    $('r-outcome').textContent = '—';
+    $('r-dist').textContent = '—';
+    $('r-steps').textContent = '—';
+    $('r-time').textContent = '—';
+    $('m-dist').textContent = '—';
+    $('m-dist-bar').style.width = '0%';
+    $('m-dist-sub').textContent = 'idle · L2 to target';
+    $('m-steps').textContent = '000';
+    $('m-steps-bar').style.width = '0%';
+    $('m-steps-sub').textContent = `budget ${BUDGET} · idle`;
+    $('m-heading').textContent = '000';
+    $('m-heading-sub').textContent = 'bearing to target · —';
+    $('m-time').textContent = '00.0';
+    $('clock-ep').textContent = '00:00.0';
+    $('cmd-submit').disabled = false;
+    $('cmd-input').disabled = false;
+    log('SYS  &gt;', '<span class="dim">episode state cleared · pose returned to origin</span>', 'sys');
+    logAwait('awaiting next order');
+  }
+
+  // ---------- event wiring --------------------------------------------------
+  $('cmd-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = $('cmd-input').value.trim();
+    if (!v || dispatching) return;
+    dispatch(v);
+  });
+
+  document.querySelectorAll('.quick button[data-cmd]').forEach((b) => {
+    b.addEventListener('click', () => {
+      if (dispatching) return;
+      $('cmd-input').value = b.dataset.cmd;
+      $('cmd-input').focus();
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target === $('cmd-input')) return;
+    if (e.key === 'r' || e.key === 'R') { reset(); }
+    else if (e.key === 'Escape' && dispatching) { finishEpisode(false, simSteps, undefined); }
+    else if (/^[1-4]$/.test(e.key)) {
+      const btns = document.querySelectorAll('.quick button[data-cmd]');
+      const b = btns[Number(e.key) - 1];
+      if (b && !dispatching) { $('cmd-input').value = b.dataset.cmd; $('cmd-input').focus(); }
+    }
+  });
+
+  // Tick the episode clock every 100ms while running
+  setInterval(() => {
+    if (dispatching) {
+      const elapsed = (performance.now() - t0) / 1000;
+      $('m-time').textContent = elapsed.toFixed(1);
+      $('clock-ep').textContent = epClock(elapsed);
+    }
+  }, 100);
+})();
+</script>
+</body>
+</html>
