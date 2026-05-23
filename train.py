@@ -4,37 +4,43 @@ Run:  uv run python train.py
 """
 
 import os
+from pathlib import Path
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 from rich.console import Console
 
 from disaster_env import DisasterEnv
+from scenes import GENERATED_SCENES, get_scene
 
 console = Console()
 MODELS_DIR    = "./models"
-TOTAL_STEPS   = 200_000
-N_ENVS        = 6
+TOTAL_STEPS   = 500_000
+N_ENVS        = len(GENERATED_SCENES)
 CHECKPOINT_FREQ = 20_000   # save every N steps (per env)
+MODEL_NAME    = "ppo_fixed_six"
 
 
-def make_env():
+def make_env(scene_index: int):
     def _init():
-        return DisasterEnv(render_mode="rgb_array")
+        return DisasterEnv(scene=get_scene(scene_index), render_mode="rgb_array")
     return _init
 
 
 def main():
     os.makedirs(MODELS_DIR, exist_ok=True)
 
-    console.print("[bold cyan]Building vectorised environment...[/]")
-    env = SubprocVecEnv([make_env() for _ in range(N_ENVS)])
+    console.print("[bold cyan]Building vectorised environment from fixed generated scenes...[/]")
+    for idx, scene in enumerate(GENERATED_SCENES):
+        console.print(f"  {idx + 1}. {scene['name']}")
+
+    env = SubprocVecEnv([make_env(i) for i in range(N_ENVS)])
     env = VecMonitor(env)
 
     checkpoint_cb = CheckpointCallback(
         save_freq=CHECKPOINT_FREQ,
         save_path=MODELS_DIR,
-        name_prefix="ppo_disaster",
+        name_prefix=MODEL_NAME,
         verbose=1,
     )
 
@@ -50,7 +56,7 @@ def main():
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
-        ent_coef=0.01,
+        ent_coef=0.0,
         tensorboard_log="./tb_logs",
     )
 
@@ -60,9 +66,13 @@ def main():
         progress_bar=True,
     )
 
-    final_path = os.path.join(MODELS_DIR, "ppo_model_final")
+    final_path = os.path.join(MODELS_DIR, MODEL_NAME + "_final")
     model.save(final_path)
     console.print(f"[bold green]✓ Training complete. Model saved to {final_path}.zip[/]")
+
+    compatibility_path = Path(MODELS_DIR) / "ppo_model_final"
+    model.save(compatibility_path)
+    console.print(f"[green]Also wrote compatibility model to {compatibility_path}.zip[/]")
     env.close()
 
 

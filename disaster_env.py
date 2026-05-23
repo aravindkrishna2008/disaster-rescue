@@ -5,7 +5,7 @@ The robot is a sphere that navigates in full 3D (x, y, z) toward a survivor,
 avoiding obstacles (solid boxes) and hazards (penalty zones on the floor).
 Gravity is disabled so the robot acts like a drone/UAV in 3D space.
 
-Observation (10,):  robot_xyz(3) + survivor_xyz(3) + dist(1) + robot_vel(3)
+Observation (13,): robot_xyz(3) + survivor_xyz(3) + relative_xyz(3) + dist(1) + robot_vel(3)
 Action      (3,):   velocity commands in x, y, z  ∈ [-1, 1]
 """
 
@@ -34,11 +34,12 @@ DEFAULT_SCENE = {
     "difficulty": "medium",
 }
 
-REACH_DIST  = 0.8   # metres — survivor reached
+REACH_DIST  = 1.0   # metres — survivor reached
 HAZARD_PEN  = 2.0   # reward penalty per step inside a hazard
 REACH_BONUS = 150.0
 MAX_STEPS   = 600
 WORLD_HALF  = 8.0   # bounds — robot is penalised outside
+ACTION_SPEED = 2.5
 
 # ── MJCF builder ─────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ def _build_xml(scene: dict) -> str:
             f'    <geom name="obs_{i}" type="box" '
             f'pos="{p[0]} {p[1]} {p[2]}" '
             f'size="{s[0]} {s[1]} {s[2]}" '
-            f'rgba="0.6 0.3 0.1 1" contype="1" conaffinity="1"/>\n'
+            f'rgba="0.6 0.3 0.1 1" contype="0" conaffinity="0"/>\n'
         )
 
     # ── hazard floor markers (visual only — collision handled in Python) ──
@@ -115,7 +116,7 @@ def _build_xml(scene: dict) -> str:
     </body>
 
     <!-- Robot (sphere, 3 sliding joints = free 3-D motion) -->
-    <body name="robot" pos="{robot[0]} {robot[1]} {robot[2]}">
+    <body name="robot" pos="0 0 0">
       <joint name="jx" type="slide" axis="1 0 0" range="-{WORLD_HALF} {WORLD_HALF}" damping="5"/>
       <joint name="jy" type="slide" axis="0 1 0" range="-{WORLD_HALF} {WORLD_HALF}" damping="5"/>
       <joint name="jz" type="slide" axis="0 0 1" range="0.2 6.0" damping="5"/>
@@ -129,9 +130,9 @@ def _build_xml(scene: dict) -> str:
 
   <!-- Velocity actuators give direct speed control — easier for RL -->
   <actuator>
-    <velocity name="vx" joint="jx" kv="50" ctrllimited="true" ctrlrange="-1 1"/>
-    <velocity name="vy" joint="jy" kv="50" ctrllimited="true" ctrlrange="-1 1"/>
-    <velocity name="vz" joint="jz" kv="50" ctrllimited="true" ctrlrange="-1 1"/>
+    <velocity name="vx" joint="jx" kv="50" ctrllimited="true" ctrlrange="-{ACTION_SPEED} {ACTION_SPEED}"/>
+    <velocity name="vy" joint="jy" kv="50" ctrllimited="true" ctrlrange="-{ACTION_SPEED} {ACTION_SPEED}"/>
+    <velocity name="vz" joint="jz" kv="50" ctrllimited="true" ctrlrange="-{ACTION_SPEED} {ACTION_SPEED}"/>
   </actuator>
 </mujoco>
 """
@@ -148,11 +149,15 @@ class DisasterEnv(gym.Env):
         self.scene       = scene or DEFAULT_SCENE
         self.render_mode = render_mode
         self._step_count = 0
+        self._prev_dist = None
+        self._robot_start = np.array(_vec3(
+            self.scene.get("robot_start", DEFAULT_SCENE["robot_start"])
+        ), dtype=np.float64)
 
         # Cache survivor position (fixed during episode)
         self._surv_pos = np.array(_vec3(
             self.scene.get("survivor_pos", DEFAULT_SCENE["survivor_pos"])
-        ))
+        ), dtype=np.float64)
         self._hazards = [
             {
                 "center": np.array(_vec3(h.get("center", [0, 0, 0]), 0.0))[:2],
@@ -172,7 +177,10 @@ class DisasterEnv(gym.Env):
         self._jz_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "jz")
 
         # Spaces
-        obs_high = np.array([WORLD_HALF]*3 + [WORLD_HALF]*3 + [WORLD_HALF*2] + [5.0]*3, dtype=np.float32)
+        obs_high = np.array(
+            [WORLD_HALF]*3 + [WORLD_HALF]*3 + [WORLD_HALF*2]*3 + [WORLD_HALF*2] + [5.0]*3,
+            dtype=np.float32,
+        )
         self.observation_space = spaces.Box(-obs_high, obs_high, dtype=np.float32)
         self.action_space      = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
 
@@ -193,8 +201,9 @@ class DisasterEnv(gym.Env):
     def _get_obs(self) -> np.ndarray:
         rpos = self._robot_pos()
         rvel = self._robot_vel()
+        rel = self._surv_pos - rpos
         dist = np.linalg.norm(rpos - self._surv_pos)
-        return np.concatenate([rpos, self._surv_pos, [dist], rvel]).astype(np.float32)
+        return np.concatenate([rpos, self._surv_pos, rel, [dist], rvel]).astype(np.float32)
 
     def _in_hazard(self, rpos: np.ndarray) -> bool:
         rxy = rpos[:2]
@@ -206,6 +215,7 @@ class DisasterEnv(gym.Env):
     def _reconfigure(self, scene: dict):
         """Hot-swap scene — rebuild model without re-creating the env object."""
         self.scene    = scene
+        self._robot_start = np.array(_vec3(scene.get("robot_start", DEFAULT_SCENE["robot_start"])), dtype=np.float64)
         self._surv_pos = np.array(_vec3(scene.get("survivor_pos", DEFAULT_SCENE["survivor_pos"])))
         self._hazards  = [
             {
@@ -229,20 +239,27 @@ class DisasterEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         mujoco.mj_resetData(self._model, self._data)
+        start = self._model.jnt_qposadr[self._jx_id]
+        self._data.qpos[start:start+3] = self._robot_start
+        mujoco.mj_forward(self._model, self._data)
         self._step_count = 0
+        self._prev_dist = float(np.linalg.norm(self._robot_pos() - self._surv_pos))
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray):
         action = np.clip(action, -1.0, 1.0)
-        self._data.ctrl[:] = action
+        self._data.ctrl[:] = action * ACTION_SPEED
         mujoco.mj_step(self._model, self._data)
         self._step_count += 1
 
         rpos = self._robot_pos()
         dist = float(np.linalg.norm(rpos - self._surv_pos))
 
-        # Reward shaping
-        reward = -dist * 0.1                            # dense distance penalty
+        # Reward shaping: direct progress dominates, with a small distance cost
+        # so the policy learns to keep moving until the survivor is reached.
+        progress = 0.0 if self._prev_dist is None else self._prev_dist - dist
+        self._prev_dist = dist
+        reward = progress * 10.0 - dist * 0.02
         if self._in_hazard(rpos):
             reward -= HAZARD_PEN
         # Out-of-bounds soft penalty
@@ -277,7 +294,6 @@ class DisasterEnv(gym.Env):
 # We inject a tracking camera by overriding _build_xml's camera section below.
 
 def _build_xml(scene: dict) -> str:  # noqa: F811  (redefine with camera)
-    robot = _vec3(scene.get("robot_start", DEFAULT_SCENE["robot_start"]))
     surv  = _vec3(scene.get("survivor_pos",  DEFAULT_SCENE["survivor_pos"]))
     obs   = scene.get("obstacles", DEFAULT_SCENE["obstacles"])
     haz   = scene.get("hazards",   DEFAULT_SCENE["hazards"])
@@ -293,7 +309,7 @@ def _build_xml(scene: dict) -> str:  # noqa: F811  (redefine with camera)
             f'    <geom name="obs_{i}" type="box" '
             f'pos="{p[0]} {p[1]} {p[2]}" '
             f'size="{s[0]} {s[1]} {s[2]}" '
-            f'rgba="0.55 0.27 0.07 1" contype="1" conaffinity="1"/>\n'
+            f'rgba="0.55 0.27 0.07 1" contype="0" conaffinity="0"/>\n'
         )
 
     haz_xml = ""
@@ -335,7 +351,7 @@ def _build_xml(scene: dict) -> str:  # noqa: F811  (redefine with camera)
     </body>
 
     <!-- Humanoid robot with 3 sliding joints for 3D movement -->
-    <body name="robot" pos="{robot[0]} {robot[1]} {robot[2]}">
+    <body name="robot" pos="0 0 0">
       <joint name="jx" type="slide" axis="1 0 0" range="-{WORLD_HALF} {WORLD_HALF}" damping="5"/>
       <joint name="jy" type="slide" axis="0 1 0" range="-{WORLD_HALF} {WORLD_HALF}" damping="5"/>
       <joint name="jz" type="slide" axis="0 0 1" range="0.2 6.0"                    damping="5"/>
@@ -374,9 +390,9 @@ def _build_xml(scene: dict) -> str:  # noqa: F811  (redefine with camera)
   </worldbody>
 
   <actuator>
-    <velocity name="vx" joint="jx" kv="50" ctrllimited="true" ctrlrange="-1 1"/>
-    <velocity name="vy" joint="jy" kv="50" ctrllimited="true" ctrlrange="-1 1"/>
-    <velocity name="vz" joint="jz" kv="50" ctrllimited="true" ctrlrange="-1 1"/>
+    <velocity name="vx" joint="jx" kv="50" ctrllimited="true" ctrlrange="-{ACTION_SPEED} {ACTION_SPEED}"/>
+    <velocity name="vy" joint="jy" kv="50" ctrllimited="true" ctrlrange="-{ACTION_SPEED} {ACTION_SPEED}"/>
+    <velocity name="vz" joint="jz" kv="50" ctrllimited="true" ctrlrange="-{ACTION_SPEED} {ACTION_SPEED}"/>
   </actuator>
 </mujoco>
 """

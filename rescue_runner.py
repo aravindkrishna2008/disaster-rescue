@@ -21,6 +21,7 @@ import imageio
 from stable_baselines3 import PPO
 
 from disaster_env import DisasterEnv, DEFAULT_SCENE
+from scenes import GENERATED_SCENES, get_scene
 
 OUTPUT_DIR   = "./output"
 GIF_FPS      = 20
@@ -98,6 +99,30 @@ def run_episode(
     }
 
 
+def run_generated_scene_suite(
+    model_path: str = "./models/ppo_fixed_six_final",
+    output_dir: str = OUTPUT_DIR,
+    max_steps: int = 600,
+) -> list[dict]:
+    """Render one deterministic PPO episode for each fixed generated scene."""
+    os.makedirs(output_dir, exist_ok=True)
+    results = []
+    for idx, scene_template in enumerate(GENERATED_SCENES):
+        scene = get_scene(idx)
+        name = scene_template["name"]
+        gif_path = os.path.join(output_dir, f"{idx + 1:02d}_{name}.gif")
+        result = run_episode(
+            scene=scene,
+            model_path=model_path,
+            gif_path=gif_path,
+            max_steps=max_steps,
+        )
+        result["scene_index"] = idx
+        result["scene_name"] = name
+        results.append(result)
+    return results
+
+
 # ── quick smoke test ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -107,9 +132,32 @@ if __name__ == "__main__":
 
     console = Console()
 
-    model_arg = sys.argv[1] if len(sys.argv) > 1 else "./models/ppo_model_final"
+    model_arg = sys.argv[1] if len(sys.argv) > 1 else "./models/ppo_fixed_six_final"
+    suite = "--suite" in sys.argv
 
     console.print(f"[bold cyan]Running episode with model:[/] {model_arg}")
+    if suite:
+        table = Table(title="Generated Scene Suite", show_header=True)
+        table.add_column("#", style="bold")
+        table.add_column("Scene")
+        table.add_column("Reached")
+        table.add_column("Steps")
+        table.add_column("Reward")
+        table.add_column("GIF")
+
+        for result in run_generated_scene_suite(model_path=model_arg):
+            table.add_row(
+                str(result["scene_index"] + 1),
+                result["scene_name"],
+                "Yes" if result["reached"] else "No",
+                str(result["steps"]),
+                str(result["total_reward"]),
+                result["gif_path"],
+            )
+
+        console.print(table)
+        raise SystemExit(0)
+
     result = run_episode(model_path=model_arg)
 
     table = Table(title="Episode Results", show_header=True)
