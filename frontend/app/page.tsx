@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import LandingReport from './LandingReport';
 import TrainingRuns from './TrainingRuns';
 
 const tsNow = () => {
@@ -147,13 +148,15 @@ export default function Page() {
         </div>
       </section>
 
+      <LandingReport />
+
       {/* Training & Model Suite Section */}
-      <section className="landing-section" style={{ paddingTop: '30px' }}>
+      <section className="landing-section report-section" style={{ paddingTop: '30px' }}>
         <div className="landing-section-hd">
           <h2>
             Training Pipeline <span>— Progress Metrics</span>
           </h2>
-          <span className="sec-idx mono">[ SECTION 03 / METRICS ]</span>
+          <span className="sec-idx mono">[ SECTION 08 / METRICS ]</span>
         </div>
 
         <TrainingRuns />
