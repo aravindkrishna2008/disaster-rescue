@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import WorkflowNav from '../WorkflowNav';
 
 type Scene = {
   index: number;
@@ -391,12 +392,7 @@ export default function MissionControlPage() {
             <div className="brand-sub mono">EPISODE RUNNER · v0.4.2</div>
           </div>
         </Link>
-        <div className="nav-tabs">
-          <Link href="/" className="nav-tab">Overview</Link>
-          <Link href="/console" className="nav-tab">Interactive Console</Link>
-          <Link href="/mission-control" className="nav-tab is-active">Mission Control</Link>
-          <Link href="/generate" className="nav-tab">Scene Generator</Link>
-        </div>
+        <WorkflowNav active="gym" />
         <div className="clock">
           <span className="lbl">UTC</span>
           <span className="val mono">{clockUtc}</span>
@@ -409,9 +405,11 @@ export default function MissionControlPage() {
 
       <header className="mc-topbar">
         <div>
-          <h1 className="mc-title">
-            Mission Control <span>— Multi-Environment Rollout Suite</span>
-          </h1>
+          <h1 className="mc-title">Training Gym</h1>
+          <p className="mc-purpose">
+            Train the navigation policy in simulation, then run any gym environment to inspect its animated
+            rollout and readiness telemetry before moving into generated scenes.
+          </p>
         </div>
         <div className="mc-controls">
           <label className="mc-field">
@@ -467,7 +465,7 @@ export default function MissionControlPage() {
       <div className="mc-meta-row">
         <span>Rollout budget <b>{defaultMaxSteps}</b></span>
         <span className="sep">/</span>
-        <span>Envs <b>{FIXED_NUM_ENVS}</b></span>
+        <span>Gym environments <b>{FIXED_NUM_ENVS}</b></span>
         <span className="sep">/</span>
         <span>
           Training <b style={{ color: isTraining ? 'var(--red)' : undefined }}>{train.status}</b>
@@ -569,14 +567,14 @@ export default function MissionControlPage() {
               {isDone && routeStats && (
                 <details className="mc-advanced">
                   <summary>
-                    <span>Advanced stats</span>
+                    <span>Deployment stats</span>
                     <span className="mc-advanced-peek">
                       efficiency <b>{routeStats.efficiency.toFixed(0)}%</b>
                     </span>
                   </summary>
                   <div className="mc-advanced-panel">
                     <div className="mc-advanced-head">
-                      <span>Episode telemetry</span>
+                      <span>Policy response telemetry</span>
                       <b>{state.result.reached ? 'RESCUE COMPLETE' : 'ROUTE INCOMPLETE'}</b>
                     </div>
                     <div className="mc-kpi-grid">

@@ -126,7 +126,7 @@ def _train_worker(total_steps: int) -> None:
     env = {**os.environ, "BATTLE_ANGEL_TRAIN_STEPS": str(total_steps)}
     try:
         proc = subprocess.Popen(
-            [sys.executable, str(_HERE / "train.py")],
+            [sys.executable, str(_HERE / "train.py"), "--timesteps", str(total_steps)],
             cwd=str(_HERE),
             env=env,
             # Own process group so we can SIGTERM the trainer AND its

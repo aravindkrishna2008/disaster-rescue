@@ -86,11 +86,9 @@ def run_episode(
     final_info = {}
     cancelled = False
     detection_event = None
+    record_rollout = False
 
     for _ in range(max_steps):
-        if cancel_event is not None and cancel_event.is_set():
-            cancelled = True
-            break
         # Capture frame before step (so first frame shows start pose)
         frame = env.render()
         if frame is not None:
@@ -123,6 +121,7 @@ def run_episode(
         final_info = info
 
         if info.get("survivor_detected") and detection_event is None:
+            robot_pos = info.get("base_pos", obs[:3])
             detection_event = {
                 "step": len(trajectory),
                 "robot_pos": trajectory[-1],

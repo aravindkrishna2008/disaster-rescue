@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import ThreeArena from '../ThreeArena';
+import WorkflowNav from '../WorkflowNav';
 
 type EvalResult = {
   score: number;
@@ -19,6 +20,9 @@ type EpisodeResult = {
   gif_url?: string;
   gif_path?: string;
   trajectory?: number[][];
+  min_dist?: number | null;
+  obstacle_contacts?: number;
+  hazard_steps?: number;
   detection_event?: { step: number; signal?: string } | null;
   cancelled?: boolean;
 };
@@ -117,6 +121,10 @@ export default function GeneratePage() {
 
   const scoreColor = (score: number) =>
     score >= 80 ? 'var(--ok)' : score >= 60 ? '#f59e0b' : 'var(--red)';
+  const episodeGif = result?.episode?.gif_url
+    ?? (result?.episode?.gif_path
+      ? `/gifs/${result.episode.gif_path.split('/').pop()}`
+      : null);
 
   const visualization = result
     ? (() => {
@@ -150,22 +158,17 @@ export default function GeneratePage() {
             <div className="brand-sub mono">SCENE GENERATOR · v0.1.0</div>
           </div>
         </Link>
-        <div className="nav-tabs">
-          <Link href="/" className="nav-tab">Overview</Link>
-          <Link href="/console" className="nav-tab">Interactive Console</Link>
-          <Link href="/mission-control" className="nav-tab">Mission Control</Link>
-          <Link href="/generate" className="nav-tab is-active">Scene Generator</Link>
-        </div>
+        <WorkflowNav active="generate" />
       </header>
 
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '40px 24px' }}>
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
-            Scene Generator
+            02 / Scene Generator
           </h1>
           <p style={{ color: 'var(--ink-dim)', fontSize: 13 }}>
-            Describe a disaster scenario. ScenarioAgent generates the scene. EvalAgent scores it.
-            If it passes, the robot runs it.
+            After the Training Gym, describe a deployment candidate. ScenarioAgent builds the scene and
+            EvalAgent scores it. Passing scenes run the PPO policy for playback and readiness statistics.
           </p>
         </div>
 
@@ -201,7 +204,7 @@ export default function GeneratePage() {
               className="btn-secondary"
               style={{ opacity: promptLoading ? 0.5 : 1, whiteSpace: 'nowrap' }}
             >
-              {promptLoading ? 'Asking Gemini…' : '✦ Generate with Gemini'}
+              {promptLoading ? 'Asking Gemini…' : 'Generate with Gemini'}
             </button>
           </div>
 
@@ -382,34 +385,47 @@ export default function GeneratePage() {
               )}
             </div>
 
-            {/* Episode result */}
+            {/* Episode playback and deployment stats */}
             {result.episode && (
-              <div style={{ background: 'var(--surface)', border: `1px solid ${result.episode.reached ? 'var(--ok)' : 'var(--rule)'}`, borderRadius: 6, padding: 20 }}>
-                <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--ink-dim)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
-                  Robot Episode
-                </div>
-                <div style={{ display: 'flex', gap: 28, fontFamily: 'monospace', fontSize: 13, flexWrap: 'wrap' }}>
-                  <span>
-                    reached: <strong style={{ color: result.episode.reached ? 'var(--ok)' : 'var(--red)' }}>
-                      {result.episode.reached ? 'YES' : 'NO'}
-                    </strong>
-                  </span>
-                  <span>steps: <strong style={{ color: 'var(--ink)' }}>{result.episode.steps}</strong></span>
-                  <span>reward: <strong style={{ color: 'var(--ink)' }}>{result.episode.total_reward.toFixed(2)}</strong></span>
-                  {result.episode.final_dist != null && (
-                    <span>final dist: <strong style={{ color: 'var(--ink)' }}>{result.episode.final_dist.toFixed(2)}m</strong></span>
-                  )}
-                </div>
-                {result.episode.gif_url && (
-                  <div style={{ marginTop: 16, border: '1px solid var(--rule)', background: 'var(--bg)' }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      alt="Generated robot rollout"
-                      src={`${result.episode.gif_url}?t=${Date.now()}`}
-                      style={{ display: 'block', width: '100%', maxHeight: 360, objectFit: 'contain' }}
-                    />
+              <div className="generated-playback">
+                <div className="generated-playback-hd">
+                  <div>
+                    <span className="generated-eyebrow mono">03 / POLICY PLAYBACK</span>
+                    <h2>Generated Scene Response</h2>
+                    <p>Animated rollout and initial deployment-readiness statistics for this scene.</p>
                   </div>
-                )}
+                  <Link href="/console" className="btn-secondary">
+                    Open Interactive Console
+                  </Link>
+                </div>
+                <div className="generated-playback-body">
+                  <div className="generated-animation">
+                    {episodeGif ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={`${episodeGif}?t=${Date.now()}`} alt="PPO rollout in generated scene" />
+                    ) : (
+                      <div className="generated-animation-empty">
+                        Animation not available for this episode.
+                      </div>
+                    )}
+                  </div>
+                  <dl className="generated-kpis mono">
+                    <div>
+                      <dt>Target reached</dt>
+                      <dd className={result.episode.reached ? 'ok' : 'fail'}>
+                        {result.episode.reached ? 'YES' : 'NO'}
+                      </dd>
+                    </div>
+                    <div><dt>Steps</dt><dd>{result.episode.steps}</dd></div>
+                    <div><dt>Total reward</dt><dd>{result.episode.total_reward.toFixed(2)}</dd></div>
+                    <div>
+                      <dt>Final distance</dt>
+                      <dd>{result.episode.final_dist == null ? '—' : `${result.episode.final_dist.toFixed(2)} m`}</dd>
+                    </div>
+                    <div><dt>Obstacle contacts</dt><dd>{result.episode.obstacle_contacts ?? '—'}</dd></div>
+                    <div><dt>Hazard steps</dt><dd>{result.episode.hazard_steps ?? '—'}</dd></div>
+                  </dl>
+                </div>
               </div>
             )}
 

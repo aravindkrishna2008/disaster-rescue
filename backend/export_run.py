@@ -170,7 +170,6 @@ def export_run(
         model_path=str(model_path),
         output_dir=str(gifs_dir),
         max_steps=max_steps,
-        record_rollout=True,
     )
 
     episode_exports = []
