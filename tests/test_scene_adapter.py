@@ -6,9 +6,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
-from disaster_env import DisasterEnv, OBSTACLE_COUNT
+from disaster_env import DisasterEnv, OBSTACLE_COUNT, generate_random_terrain
 from scenario_agent import (
     ASSET_CATALOG,
     HazardZone,
@@ -92,6 +94,12 @@ def test_scene_spec_to_env_scene_selects_priority_target_and_scales_content() ->
     assert env_scene["hazards"][0]["type"] == "gas"
     assert env_scene["hazards"][0]["center"] == pytest.approx([-4.0, -4.0, 0.0])
     assert env_scene["hazards"][0]["radius"] == 1.0
+    assert env_scene["terrain"]["grid_size"] == 10
+    assert env_scene["terrain"]["height_scale"] == pytest.approx(0.5)
+    assert len(env_scene["terrain"]["heights"]) == 10
+    assert len(env_scene["terrain"]["roughness"]) == 10
+    assert len(env_scene["terrain"]["danger"]) == 10
+    assert len(env_scene["terrain"]["rigid"]) == 10
 
 
 def test_disaster_env_accepts_converted_scene_with_many_assets() -> None:
@@ -109,5 +117,25 @@ def test_disaster_env_accepts_converted_scene_with_many_assets() -> None:
         assert terminated is False
         assert truncated is False
         assert "dist" in info
+        assert "terrain_height" in info
+        assert "terrain_roughness" in info
+        assert "terrain_danger" in info
+        assert "terrain_blocked" in info
     finally:
         env.close()
+
+
+def test_scene_adapter_generates_deterministic_terrain_for_same_scene() -> None:
+    first = scene_spec_to_env_scene(make_scene())
+    second = scene_spec_to_env_scene(make_scene())
+
+    assert first["terrain"] == second["terrain"]
+
+
+def test_hard_terrain_contains_rigid_and_dangerous_cells() -> None:
+    terrain = generate_random_terrain(seed=123, difficulty="hard", grid_size=10)
+
+    assert max(max(row) for row in terrain["heights"]) == pytest.approx(0.72, abs=0.002)
+    assert max(max(row) for row in terrain["roughness"]) >= 1.0
+    assert sum(sum(row) for row in terrain["danger"]) > 0
+    assert sum(sum(row) for row in terrain["rigid"]) > 0

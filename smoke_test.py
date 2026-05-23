@@ -62,6 +62,11 @@ def main() -> None:
 
     print("Generated scene loaded into DisasterEnv.")
     print(f"Active survivor: {env_scene['active_survivor']['name']}")
+    print(
+        "Terrain: "
+        f"seed={env_scene['terrain']['seed']}, "
+        f"grid={env_scene['terrain']['grid_size']}x{env_scene['terrain']['grid_size']}"
+    )
     print(f"Observation shape: {obs.shape} -> {next_obs.shape}")
     print(f"Rendered frame: {None if frame is None else frame.shape}")
     print(

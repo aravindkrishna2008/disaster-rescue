@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import radians
 from typing import Any
 
+from disaster_env import generate_random_terrain
 from scenario_agent import ASSET_CATALOG, SceneSpec, SurvivorLocation
 
 
@@ -63,6 +64,7 @@ def scene_spec_to_env_scene(scene: SceneSpec) -> dict[str, Any]:
         }
         for hazard in scene.hazards
     ]
+    terrain_seed = _terrain_seed(scene)
 
     return {
         "description": scene.description,
@@ -78,6 +80,11 @@ def scene_spec_to_env_scene(scene: SceneSpec) -> dict[str, Any]:
         "survivors": survivors,
         "obstacles": obstacles,
         "hazards": hazards,
+        "terrain": generate_random_terrain(
+            seed=terrain_seed,
+            difficulty=scene.difficulty,
+            grid_size=10,
+        ),
         "notes": scene.notes,
         "source": "scenario_agent",
     }
@@ -100,3 +107,11 @@ def _to_env_xy(point: tuple[float, float, float]) -> tuple[float, float]:
 def _to_env_floor_point(point: tuple[float, float, float]) -> list[float]:
     x, y = _to_env_xy(point)
     return [x, y, 0.0]
+
+
+def _terrain_seed(scene: SceneSpec) -> int:
+    text = f"{scene.description}|{scene.difficulty}|{len(scene.assets)}|{len(scene.hazards)}"
+    seed = 0
+    for char in text:
+        seed = ((seed * 33) + ord(char)) & 0xFFFFFFFF
+    return seed
