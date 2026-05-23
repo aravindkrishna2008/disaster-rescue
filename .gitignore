@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyo
 *.egg-info/
@@ -8,6 +9,7 @@ dist/
 build/
 
 # Virtual environments
+.venv
 .venv/
 venv/
 env/
@@ -16,6 +18,7 @@ env/
 models/
 tb_logs/
 output/
+tmp/
 
 # Environment & secrets
 .env
