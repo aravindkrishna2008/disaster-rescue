@@ -534,6 +534,29 @@ body::before{
   color: var(--ink-mid);
   margin: 0 0 20px;
 }
+.training-run-live-tag {
+  color: var(--green, #2a5c3a);
+  font-weight: 600;
+}
+.training-run-fallback-tag {
+  color: var(--ink-mid);
+  font-weight: 400;
+  font-style: italic;
+}
+.training-run-eval-badge {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: -4px 0 12px;
+  font-family: var(--font-mono, monospace);
+}
+.chart-empty {
+  font-size: 13px;
+  color: var(--ink-mid);
+  padding: 48px 16px;
+  text-align: center;
+  font-style: italic;
+}
 
 .advanced-stats {
   margin-top: 20px;

@@ -7,6 +7,9 @@ const nextConfig = {
       { source: '/scenes', destination: `${backend}/scenes` },
       { source: '/scene/:idx/run', destination: `${backend}/scene/:idx/run` },
       { source: '/gifs/:path*', destination: `${backend}/gifs/:path*` },
+      { source: '/runs', destination: `${backend}/runs` },
+      { source: '/runs/:id', destination: `${backend}/runs/:id` },
+      { source: '/run-gifs/:path*', destination: `${backend}/run-gifs/:path*` },
       { source: '/health', destination: `${backend}/health` },
     ];
   },

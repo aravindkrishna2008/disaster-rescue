@@ -33,6 +33,7 @@ def run_episode(
     model_path: str = "./models/ppo_model_final",
     gif_path: str = None,
     max_steps: int = 600,
+    record_rollout: bool = False,
 ) -> dict:
     """
     Run one episode of the trained policy in the given scene.
@@ -58,9 +59,11 @@ def run_episode(
     model = PPO.load(model_path, device="cpu")
 
     trajectory: list[list[float]] = []
+    rollout: list[dict] = []
     frames: list[np.ndarray] = []
     total_reward = 0.0
     reached = False
+    detection_event = None
 
     for _ in range(max_steps):
         # Capture frame before step (so first frame shows start pose)
@@ -69,11 +72,32 @@ def run_episode(
             frames.append(frame)
 
         action, _ = model.predict(obs, deterministic=True)
+        if record_rollout:
+            rollout.append(
+                {
+                    "obs": obs.tolist(),
+                    "action": np.asarray(action).tolist(),
+                }
+            )
+
         obs, reward, terminated, truncated, info = env.step(action)
+
+        if record_rollout and rollout:
+            rollout[-1]["reward"] = float(reward)
+            rollout[-1]["terminated"] = bool(terminated)
+            rollout[-1]["truncated"] = bool(truncated)
 
         total_reward += float(reward)
         robot_pos = [float(obs[0]), float(obs[1]), 0.0]
         trajectory.append(robot_pos)
+
+        if info.get("survivor_detected") and detection_event is None:
+            detection_event = {
+                "step": len(trajectory),
+                "robot_pos": robot_pos,
+                "signal": info.get("detection_signal"),
+                "radius": info.get("detection_radius"),
+            }
 
         if terminated or truncated:
             reached = info.get("reached", False)
@@ -90,19 +114,24 @@ def run_episode(
     if frames:
         imageio.mimsave(gif_path, frames, fps=GIF_FPS, loop=0)
 
-    return {
+    result = {
         "trajectory": trajectory,
         "reached": reached,
         "steps": len(trajectory),
         "gif_path": gif_path,
         "total_reward": round(total_reward, 2),
+        "detection_event": detection_event,
     }
+    if record_rollout:
+        result["rollout"] = rollout
+    return result
 
 
 def run_generated_scene_suite(
     model_path: str = "./models/ppo_fixed_six_final",
     output_dir: str = OUTPUT_DIR,
     max_steps: int = 600,
+    record_rollout: bool = False,
 ) -> list[dict]:
     """Render one deterministic PPO episode for each fixed generated scene."""
     os.makedirs(output_dir, exist_ok=True)
@@ -116,6 +145,7 @@ def run_generated_scene_suite(
             model_path=model_path,
             gif_path=gif_path,
             max_steps=max_steps,
+            record_rollout=record_rollout,
         )
         result["scene_index"] = idx
         result["scene_name"] = name

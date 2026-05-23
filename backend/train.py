@@ -10,6 +10,8 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 from rich.console import Console
 
+from export_run import export_run
+
 from disaster_env import DisasterEnv
 from scenes import GENERATED_SCENES, get_scene
 
@@ -18,7 +20,7 @@ MODELS_DIR    = "./models"
 TOTAL_STEPS   = 500_000
 N_ENVS        = len(GENERATED_SCENES)
 CHECKPOINT_FREQ = 20_000   # save every N steps (per env)
-MODEL_NAME    = "ppo_fixed_six"
+MODEL_NAME    = "ppo_buried_detection"
 
 
 def make_env(scene_index: int):
@@ -74,6 +76,14 @@ def main():
     model.save(compatibility_path)
     console.print(f"[green]Also wrote compatibility model to {compatibility_path}.zip[/]")
     env.close()
+
+    console.print("[bold cyan]Exporting run manifest to runs/…[/]")
+    export_run(
+        final_path,
+        run_name=f"{MODEL_NAME}_final",
+        total_steps=TOTAL_STEPS,
+        n_envs=N_ENVS,
+    )
 
 
 if __name__ == "__main__":

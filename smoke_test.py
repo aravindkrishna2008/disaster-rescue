@@ -31,24 +31,64 @@ def main() -> None:
         action="store_true",
         help="Also write the generated scene JSON and HTML preview for debugging.",
     )
+    parser.add_argument(
+        "--mock",
+        action="store_true",
+        help="Run offline using a mock generated scene instead of contacting Gemini.",
+    )
     args = parser.parse_args()
 
     TEMP_DIR.mkdir(exist_ok=True)
 
-    agent = ScenarioAgent()
-    agent.create()
+    if args.mock:
+        from scenario_agent import SceneSpec, PlacedAsset, HazardZone, SurvivorLocation, ASSET_CATALOG
+        scene = SceneSpec(
+            description="Mock collapsed building",
+            difficulty="easy",
+            robot_start=(1.5, 1.5, 0.0),
+            survivors=[
+                SurvivorLocation(
+                    profile=SurvivorProfile(name="Maya", type="baby", priority="critical"),
+                    position=(4.0, 16.0, 0.0),
+                ),
+                SurvivorLocation(
+                    profile=SurvivorProfile(name="Luis", type="adult", priority="medium"),
+                    position=(18.0, 18.0, 0.0),
+                ),
+            ],
+            assets=[
+                PlacedAsset(
+                    asset_id="concrete_slab",
+                    position=(10.0, 10.0, ASSET_CATALOG["concrete_slab"].size[2] / 2),
+                    size=ASSET_CATALOG["concrete_slab"].size,
+                    rotation_yaw=27.0,
+                )
+            ],
+            hazards=[
+                HazardZone(
+                    hazard_id="gas-1",
+                    type="gas",
+                    center=(5.0, 5.0, 0.0),
+                    radius=1.25,
+                    severity="high",
+                )
+            ],
+        )
+    else:
+        agent = ScenarioAgent()
+        agent.create()
 
-    scene = agent.generate_scene(
-        "Collapsed apartment after earthquake with no fire hazards.",
-        survivor_count=2,
-        survivor_profiles=[
-            SurvivorProfile(name="Maya", type="baby", priority="critical"),
-            SurvivorProfile(name="Luis", type="adult", priority="medium"),
-        ],
-        difficulty="easy",
-        debug=args.debug,
-        timeout=args.timeout,
-    )
+        scene = agent.generate_scene(
+            "Collapsed apartment after earthquake with no fire hazards.",
+            survivor_count=2,
+            survivor_profiles=[
+                SurvivorProfile(name="Maya", type="baby", priority="critical"),
+                SurvivorProfile(name="Luis", type="adult", priority="medium"),
+            ],
+            difficulty="easy",
+            debug=args.debug,
+            timeout=args.timeout,
+        )
 
     env_scene = scene_spec_to_env_scene(scene)
     env = DisasterEnv(scene=env_scene, render_mode="rgb_array")

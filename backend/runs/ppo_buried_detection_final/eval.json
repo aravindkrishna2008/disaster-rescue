@@ -1,0 +1,91 @@
+{
+  "model": "ppo_buried_detection_final",
+  "max_steps": 300,
+  "scene_count": 8,
+  "success_count": 8,
+  "mean_steps_reached": 76.4,
+  "mean_reward": 445.06,
+  "detection_count": 3,
+  "scenes": [
+    {
+      "scene_index": 0,
+      "scene_name": "earthquake_corridor",
+      "reached": true,
+      "steps": 84,
+      "total_reward": 460.89,
+      "detection_event": false,
+      "episode_file": "episodes/01_earthquake_corridor.json",
+      "gif": "gifs/01_earthquake_corridor.gif"
+    },
+    {
+      "scene_index": 1,
+      "scene_name": "flooded_hospital",
+      "reached": true,
+      "steps": 84,
+      "total_reward": 467.38,
+      "detection_event": false,
+      "episode_file": "episodes/02_flooded_hospital.json",
+      "gif": "gifs/02_flooded_hospital.gif"
+    },
+    {
+      "scene_index": 2,
+      "scene_name": "wildfire_shelter",
+      "reached": true,
+      "steps": 84,
+      "total_reward": 468.17,
+      "detection_event": false,
+      "episode_file": "episodes/03_wildfire_shelter.json",
+      "gif": "gifs/03_wildfire_shelter.gif"
+    },
+    {
+      "scene_index": 3,
+      "scene_name": "collapsed_bridge",
+      "reached": true,
+      "steps": 85,
+      "total_reward": 457.46,
+      "detection_event": false,
+      "episode_file": "episodes/04_collapsed_bridge.json",
+      "gif": "gifs/04_collapsed_bridge.gif"
+    },
+    {
+      "scene_index": 4,
+      "scene_name": "chemical_plant",
+      "reached": true,
+      "steps": 72,
+      "total_reward": 403.04,
+      "detection_event": false,
+      "episode_file": "episodes/05_chemical_plant.json",
+      "gif": "gifs/05_chemical_plant.gif"
+    },
+    {
+      "scene_index": 5,
+      "scene_name": "downtown_rubble",
+      "reached": true,
+      "steps": 61,
+      "total_reward": 418.86,
+      "detection_event": true,
+      "episode_file": "episodes/06_downtown_rubble.json",
+      "gif": "gifs/06_downtown_rubble.gif"
+    },
+    {
+      "scene_index": 6,
+      "scene_name": "parking_garage_pancake",
+      "reached": true,
+      "steps": 81,
+      "total_reward": 469.53,
+      "detection_event": true,
+      "episode_file": "episodes/07_parking_garage_pancake.json",
+      "gif": "gifs/07_parking_garage_pancake.gif"
+    },
+    {
+      "scene_index": 7,
+      "scene_name": "aftershock_triage_maze",
+      "reached": true,
+      "steps": 60,
+      "total_reward": 415.12,
+      "detection_event": true,
+      "episode_file": "episodes/08_aftershock_triage_maze.json",
+      "gif": "gifs/08_aftershock_triage_maze.gif"
+    }
+  ]
+}
