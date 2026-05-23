@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from disaster_env import DisasterEnv
 from scenario_agent import ScenarioAgent, SurvivorProfile
+from scene_adapter import scene_spec_to_env_scene
 
 TEMP_DIR = Path("tmp")
 
@@ -20,6 +22,11 @@ def main() -> None:
         type=float,
         default=45.0,
         help="Seconds to wait for the managed-agent interaction. Defaults to 45.",
+    )
+    parser.add_argument(
+        "--save-preview",
+        action="store_true",
+        help="Also write the generated scene JSON and HTML preview for debugging.",
     )
     args = parser.parse_args()
 
@@ -40,11 +47,32 @@ def main() -> None:
         timeout=args.timeout,
     )
 
-    json_path = scene.save_json(TEMP_DIR / "generated_scene.json")
-    html_path = scene.save_preview_html(TEMP_DIR / "generated_scene.html")
+    env_scene = scene_spec_to_env_scene(scene)
+    env = DisasterEnv(scene=env_scene, render_mode="rgb_array")
+    try:
+        obs, _ = env.reset()
+        frame = env.render()
+        action = env.action_space.sample()
+        next_obs, reward, terminated, truncated, info = env.step(action)
+    finally:
+        env.close()
 
-    print(f"Wrote scene JSON: {json_path}")
-    print(f"Wrote scene preview: {html_path}")
+    print("Generated scene loaded into DisasterEnv.")
+    print(f"Active survivor: {env_scene['active_survivor']['name']}")
+    print(f"Observation shape: {obs.shape} -> {next_obs.shape}")
+    print(f"Rendered frame: {None if frame is None else frame.shape}")
+    print(
+        "Step result: "
+        f"reward={reward:.3f}, terminated={terminated}, truncated={truncated}, "
+        f"dist={info['dist']:.3f}"
+    )
+
+    if args.save_preview:
+        json_path = scene.save_json(TEMP_DIR / "generated_scene.json")
+        html_path = scene.save_preview_html(TEMP_DIR / "generated_scene.html")
+
+        print(f"Wrote scene JSON: {json_path}")
+        print(f"Wrote scene preview: {html_path}")
 
 
 if __name__ == "__main__":

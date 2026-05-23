@@ -9,6 +9,8 @@ are enforced by Python collision checks so the policy must route around them.
 
 from __future__ import annotations
 
+import html
+import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -46,6 +48,21 @@ OBSTACLE_COUNT = 3
 G1_MODEL_PATH = Path(__file__).resolve().parent / "assets" / "mujoco_menagerie" / "unitree_g1" / "g1.xml"
 HUMANOID_MODEL_PATH = Path(__file__).resolve().parent / "assets" / "mujoco_menagerie" / "humanoid" / "humanoid.xml"
 
+ASSET_RGBA = {
+    "rubble_pile_small": "0.48 0.43 0.38 1",
+    "rubble_pile_large": "0.42 0.38 0.34 1",
+    "concrete_slab": "0.56 0.57 0.58 1",
+    "steel_beam": "0.38 0.41 0.44 1",
+    "collapsed_wall": "0.60 0.57 0.53 1",
+    "standing_wall": "0.66 0.62 0.58 1",
+}
+
+HAZARD_RGBA = {
+    "fire": "1.0 0.18 0.05 0.38",
+    "gas": "0.25 0.85 0.45 0.30",
+    "unstable_floor": "1.0 0.75 0.15 0.34",
+}
+
 
 def _vec3(seq, default_z=0.0) -> list[float]:
     seq = list(seq)
@@ -65,6 +82,19 @@ def _obstacle_bounds(obstacle: dict) -> tuple[np.ndarray, np.ndarray]:
         size = [size[0], size[0], 1.0]
     half = np.array(size[:2], dtype=np.float64)
     return center, half
+
+
+def _xml_name(prefix: str, index: int, raw: object | None = None) -> str:
+    suffix = "" if raw is None else "_" + "".join(
+        char if char.isalnum() or char == "_" else "_" for char in str(raw)
+    )
+    return f"{prefix}_{index}{suffix}"
+
+
+def _obstacle_sort_key(pos: np.ndarray, obstacle: tuple[np.ndarray, np.ndarray]) -> float:
+    center, half = obstacle
+    outside = np.maximum(np.abs(pos - center) - (half + ROBOT_RADIUS), 0.0)
+    return float(np.linalg.norm(outside))
 
 
 def _remove_xml_children(parent: ET.Element, tags: set[str]) -> None:
@@ -143,9 +173,13 @@ def _build_xml(scene: dict) -> str:
         if len(size) == 2:
             size.append(1.0)
         sx, sy, sz = [float(v) for v in size[:3]]
+        asset_id = obstacle.get("asset_id")
+        rgba = ASSET_RGBA.get(asset_id, "0.55 0.27 0.07 1")
+        yaw = math.radians(float(obstacle.get("rotation_yaw", 0.0)))
+        name = _xml_name("obs", i, asset_id)
         obs_xml += (
-            f'    <geom name="obs_{i}" type="box" pos="{pos[0]} {pos[1]} {pos[2]}" '
-            f'size="{sx} {sy} {sz}" rgba="0.55 0.27 0.07 1" '
+            f'    <geom name="{html.escape(name)}" type="box" pos="{pos[0]} {pos[1]} {pos[2]}" '
+            f'euler="0 0 {yaw}" size="{sx} {sy} {sz}" rgba="{rgba}" '
             f'contype="0" conaffinity="0"/>\n'
         )
 
@@ -153,10 +187,25 @@ def _build_xml(scene: dict) -> str:
     for i, hazard in enumerate(hazards):
         center = _vec3(hazard.get("center", [0.0, 0.0, 0.0]), default_z=0.0)
         radius = float(hazard.get("radius", 1.0))
+        height = float(hazard.get("height", 0.02))
+        rgba = HAZARD_RGBA.get(hazard.get("type"), "1.0 0.15 0.15 0.35")
+        name = _xml_name("haz", i, hazard.get("type"))
         haz_xml += (
-            f'    <geom name="haz_{i}" type="cylinder" pos="{center[0]} {center[1]} 0.01" '
-            f'size="{radius} 0.01" rgba="1.0 0.15 0.15 0.35" '
+            f'    <geom name="{html.escape(name)}" type="cylinder" pos="{center[0]} {center[1]} {height / 2}" '
+            f'size="{radius} {height / 2}" rgba="{rgba}" '
             f'contype="0" conaffinity="0"/>\n'
+        )
+
+    inactive_survivor_xml = ""
+    for i, survivor_info in enumerate(scene.get("survivors", [])):
+        if survivor_info.get("active"):
+            continue
+        pos = _vec3(survivor_info.get("pos", [0.0, 0.0, 0.0]), default_z=0.0)
+        name = _xml_name("inactive_survivor", i, survivor_info.get("name"))
+        inactive_survivor_xml += (
+            f'    <geom name="{html.escape(name)}" type="cylinder" '
+            f'pos="{pos[0]} {pos[1]} 0.04" size="0.35 0.04" '
+            f'rgba="1.0 0.7 0.2 0.55" contype="0" conaffinity="0"/>\n'
         )
 
     return f"""
@@ -181,6 +230,7 @@ def _build_xml(scene: dict) -> str:
 
 {obs_xml}
 {haz_xml}
+{inactive_survivor_xml}
 
     <body name="survivor" pos="{survivor[0]} {survivor[1]} 0">
       {humanoid_body_xml}
@@ -216,7 +266,7 @@ class DisasterEnv(gym.Env):
         self._surv_xy = _xy(self.scene.get("survivor_pos", DEFAULT_SCENE["survivor_pos"]))
         self._obstacles = [
             _obstacle_bounds(obstacle)
-            for obstacle in self.scene.get("obstacles", DEFAULT_SCENE["obstacles"])[:OBSTACLE_COUNT]
+            for obstacle in self.scene.get("obstacles", DEFAULT_SCENE["obstacles"])
         ]
         self._hazards = [
             {
@@ -268,7 +318,11 @@ class DisasterEnv(gym.Env):
 
     def _obstacle_features(self) -> list[float]:
         features: list[float] = []
-        for center, half in self._obstacles:
+        feature_obstacles = sorted(
+            self._obstacles,
+            key=lambda obstacle: _obstacle_sort_key(self._pos, obstacle),
+        )[:OBSTACLE_COUNT]
+        for center, half in feature_obstacles:
             rel = center - self._pos
             outside = np.maximum(np.abs(self._pos - center) - (half + ROBOT_RADIUS), 0.0)
             clearance = float(np.linalg.norm(outside))
