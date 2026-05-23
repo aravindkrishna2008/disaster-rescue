@@ -126,6 +126,10 @@ def test_managed_agent_raises_when_client_is_missing() -> None:
 
 
 def test_managed_agent_loads_real_api_key_and_client_works() -> None:
+    import os
+    if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
+        pytest.skip("GEMINI_API_KEY or GOOGLE_API_KEY is not configured.")
+
     agent = ManagedAgent(
         agent_id="real-client-verification-agent",
         system_prompt="You verify real client wiring.",
