@@ -583,7 +583,7 @@ export default function Console() {
               </h2>
               <span className="idx mono">[ 02 / GR-ER ]</span>
             </div>
-            <div className="comms mono" ref={commsScrollRef} role="log" aria-live="polite">
+            <div className="comms" ref={commsScrollRef} role="log" aria-live="polite">
               {comms.map((l) => (
                 <div key={l.id} className={`line${l.awaiting ? ' awaiting' : ''}`}>
                   <span className="ts">{l.ts}</span>
