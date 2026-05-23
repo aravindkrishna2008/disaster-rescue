@@ -208,6 +208,28 @@ Hackathon demo — runs locally on team laptop. No deployment required.
 If judges want to see it: screen share or second monitor showing MuJoCo viewer.
 Post-hackathon: GitHub repo + demo video.
 
+### Training Run Data Pipeline (post-hackathon / parallel to demo)
+
+Each `train.py` run should produce **machine-readable artifacts** so future agents and training jobs can compare runs, warm-start policies, and build offline datasets — not just a final `.zip` in `./models/`.
+
+**Run layout** (per invocation):
+```
+runs/<run_id>/
+  manifest.json      # hyperparams, git sha, env schema (obs/action dims), scene set hash
+  checkpoints/       # PPO checkpoints from this run
+  tb/                # TensorBoard logs scoped to this run
+  eval_results.json  # per-scene reach/steps/reward from rescue_runner --suite
+  trajectories/      # optional: exported (obs, action, reward) rollouts for IL / offline RL
+```
+
+**Why:** Without manifests, checkpoints from the 3D-action run vs grounded-2D run are indistinguishable blobs. Future runs (human or agent) need to know *which env version* produced *which data* before retraining or fine-tuning.
+
+**Stretch (after demo):**
+- `train.py --run-name <slug>` auto-creates run folder + manifest
+- `rescue_runner.py --suite --run-id <run_id>` appends eval results to that run's ledger
+- `scripts/compare_runs.py` diff eval + manifest across runs
+- Export top trajectories from successful episodes as a reusable dataset
+
 ## Next Steps — Build Plan (split by track)
 
 **RIGHT NOW — decide and split (next 20 minutes):**

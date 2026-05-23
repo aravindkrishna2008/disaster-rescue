@@ -9,6 +9,9 @@ are enforced by Python collision checks so the policy must route around them.
 
 from __future__ import annotations
 
+from pathlib import Path
+import xml.etree.ElementTree as ET
+
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -40,6 +43,8 @@ ACTION_SPEED = 0.18
 ROBOT_RADIUS = 0.35
 GROUND_Z = 0.0
 OBSTACLE_COUNT = 3
+G1_MODEL_PATH = Path(__file__).resolve().parent / "assets" / "mujoco_menagerie" / "unitree_g1" / "g1.xml"
+HUMANOID_MODEL_PATH = Path(__file__).resolve().parent / "assets" / "mujoco_menagerie" / "humanoid" / "humanoid.xml"
 
 
 def _vec3(seq, default_z=0.0) -> list[float]:
@@ -62,10 +67,74 @@ def _obstacle_bounds(obstacle: dict) -> tuple[np.ndarray, np.ndarray]:
     return center, half
 
 
+def _remove_xml_children(parent: ET.Element, tags: set[str]) -> None:
+    for child in list(parent):
+        if child.tag in tags:
+            parent.remove(child)
+        else:
+            _remove_xml_children(child, tags)
+
+
+def _prepare_g1_robot_xml() -> tuple[str, str, str]:
+    """Load Unitree G1 as a fixed visual robot mounted on the policy body."""
+    root = ET.parse(G1_MODEL_PATH).getroot()
+    default = root.find("default")
+    asset = root.find("asset")
+    worldbody = root.find("worldbody")
+    if default is None or asset is None or worldbody is None:
+        raise ValueError(f"Invalid Unitree G1 MJCF: {G1_MODEL_PATH}")
+
+    g1_body = worldbody.find("body[@name='pelvis']")
+    if g1_body is None:
+        raise ValueError(f"Unitree G1 pelvis body not found: {G1_MODEL_PATH}")
+
+    asset_dir = G1_MODEL_PATH.parent / "assets"
+    for mesh in asset.findall("mesh"):
+        mesh_file = mesh.get("file")
+        if mesh_file:
+            mesh.set("file", str(asset_dir / mesh_file))
+
+    # Keep PPO's simple xy controller. The G1 mesh hierarchy supplies the
+    # realistic robot appearance without introducing humanoid locomotion.
+    _remove_xml_children(g1_body, {"freejoint", "joint", "inertial", "site"})
+    g1_body.set("pos", "0 0 0.793")
+    for geom in g1_body.iter("geom"):
+        geom.set("contype", "0")
+        geom.set("conaffinity", "0")
+        geom.set("density", "0")
+
+    return (
+        ET.tostring(default, encoding="unicode"),
+        "\n".join(ET.tostring(child, encoding="unicode") for child in list(asset)),
+        ET.tostring(g1_body, encoding="unicode"),
+    )
+
+
+def _prepare_humanoid_body_xml() -> str:
+    """Load humanoid body structure for the survivor target."""
+    root = ET.parse(HUMANOID_MODEL_PATH).getroot()
+    worldbody = root.find("worldbody")
+    if worldbody is None:
+        raise ValueError(f"Invalid humanoid MJCF: {HUMANOID_MODEL_PATH}")
+
+    torso_body = worldbody.find("body[@name='torso']")
+    if torso_body is None:
+        raise ValueError(f"Humanoid torso body not found: {HUMANOID_MODEL_PATH}")
+
+    for geom in torso_body.iter("geom"):
+        geom.set("rgba", "1.0 0.25 0.25 1")
+        geom.set("contype", "0")
+        geom.set("conaffinity", "0")
+
+    return ET.tostring(torso_body, encoding="unicode")
+
+
 def _build_xml(scene: dict) -> str:
     survivor = _vec3(scene.get("survivor_pos", DEFAULT_SCENE["survivor_pos"]), default_z=0.0)
     obstacles = scene.get("obstacles", DEFAULT_SCENE["obstacles"])
     hazards = scene.get("hazards", DEFAULT_SCENE["hazards"])
+    g1_default_xml, g1_asset_xml, g1_body_xml = _prepare_g1_robot_xml()
+    humanoid_body_xml = _prepare_humanoid_body_xml()
 
     obs_xml = ""
     for i, obstacle in enumerate(obstacles):
@@ -92,12 +161,16 @@ def _build_xml(scene: dict) -> str:
 
     return f"""
 <mujoco model="grounded_disaster_rescue">
+  <compiler angle="radian"/>
   <option timestep="0.02" gravity="0 0 0" integrator="RK4"/>
+
+  {g1_default_xml}
 
   <asset>
     <texture name="checker" type="2d" builtin="checker"
              width="512" height="512" rgb1="0.65 0.65 0.65" rgb2="0.45 0.45 0.45"/>
     <material name="grid_mat" texture="checker" texrepeat="8 8" reflectance="0.05"/>
+{g1_asset_xml}
   </asset>
 
   <worldbody>
@@ -109,9 +182,8 @@ def _build_xml(scene: dict) -> str:
 {obs_xml}
 {haz_xml}
 
-    <body name="survivor" pos="{survivor[0]} {survivor[1]} 0.8">
-      <geom name="survivor_body" type="capsule" size="0.18 0.35"
-            rgba="1.0 0.25 0.25 1" contype="0" conaffinity="0"/>
+    <body name="survivor" pos="{survivor[0]} {survivor[1]} 0">
+      {humanoid_body_xml}
       <geom name="survivor_ring" type="cylinder" size="0.55 0.02" pos="0 0 -0.55"
             rgba="1.0 0.9 0.0 0.8" contype="0" conaffinity="0"/>
     </body>
@@ -120,18 +192,7 @@ def _build_xml(scene: dict) -> str:
       <joint name="jx" type="slide" axis="1 0 0" range="-{WORLD_HALF} {WORLD_HALF}" damping="5"/>
       <joint name="jy" type="slide" axis="0 1 0" range="-{WORLD_HALF} {WORLD_HALF}" damping="5"/>
 
-      <geom name="torso" type="capsule" size="0.18 0.4" pos="0 0 0.55"
-            rgba="0.1 0.45 1.0 1" mass="2" contype="0" conaffinity="0"/>
-      <geom name="head" type="sphere" size="0.15" pos="0 0 1.0"
-            rgba="0.2 0.5 1.0 1" mass="0.5" contype="0" conaffinity="0"/>
-      <geom name="l_arm" type="capsule" size="0.08 0.3" pos="-0.25 0 0.7"
-            rgba="0.15 0.4 0.95 1" mass="0.3" contype="0" conaffinity="0"/>
-      <geom name="r_arm" type="capsule" size="0.08 0.3" pos="0.25 0 0.7"
-            rgba="0.15 0.4 0.95 1" mass="0.3" contype="0" conaffinity="0"/>
-      <geom name="l_leg" type="capsule" size="0.1 0.35" pos="-0.12 0 0.15"
-            rgba="0.25 0.35 0.9 1" mass="0.4" contype="0" conaffinity="0"/>
-      <geom name="r_leg" type="capsule" size="0.1 0.35" pos="0.12 0 0.15"
-            rgba="0.25 0.35 0.9 1" mass="0.4" contype="0" conaffinity="0"/>
+      {g1_body_xml}
       <geom name="feet" type="cylinder" size="{ROBOT_RADIUS} 0.025" pos="0 0 0.025"
             rgba="0.0 0.9 0.45 0.8" contype="0" conaffinity="0"/>
       <camera name="track_robot" pos="0 -6 4" xyaxes="1 0 0 0 0.4 1" mode="track"/>
