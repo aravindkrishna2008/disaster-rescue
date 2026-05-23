@@ -1,51 +1,64 @@
 """
-Issue #19: Test server independently with mocked Queue + fake robot thread.
-Run: python test_server_integration.py
+Server integration smoke test with mocked Gemini and PPO rollout.
+Run: uv run python test_server_integration.py
 """
-import threading
+
 import asyncio
-from multiprocessing import Queue, Manager
 from unittest import mock
 
 
-def fake_robot(goal_queue, shared_result):
-    """Simulates robot_process.py — picks up goal, marks done immediately."""
-    while True:
-        target_id = goal_queue.get()
-        if target_id is None:
-            break
-        shared_result.update({"done": True, "reached": True, "steps": 42})
-
-
 def run():
-    manager = Manager()
-    shared_result = manager.dict()
-    goal_queue = Queue()
+    from server import CommandRequest, create_app
 
-    # Start fake robot in background thread
-    robot = threading.Thread(target=fake_robot, args=(goal_queue, shared_result), daemon=True)
-    robot.start()
-
-    from server import create_app, CommandRequest
-
-    app = create_app(goal_queue, shared_result)
+    app = create_app()
     route = next(r for r in app.routes if getattr(r, "path", None) == "/command")
 
-    with mock.patch(
-        "gemini_client.get_gemini_target",
-        return_value={"target_id": "child", "confidence": 0.9, "reason": "child first"},
+    with (
+        mock.patch(
+            "server.get_gemini_target",
+            return_value={"target_id": "child", "confidence": 0.9, "reason": "child first"},
+        ),
+        mock.patch(
+            "server._run_episode_for",
+            return_value={
+                "reached": True,
+                "fallen": False,
+                "steps": 42,
+                "total_reward": 12.5,
+                "final_dist": 0.4,
+                "min_dist": 0.4,
+                "obstacle_contacts": 0,
+                "hazard_steps": 0,
+                "mean_stance_slip": 0.12,
+                "mean_assist_force": 4.5,
+                "gait_score": 0.91,
+                "assist_scale": 0.95,
+                "balance_assist_scale": 0.85,
+                "trajectory": [[0.0, 0.0, 0.79], [1.0, 1.0, 0.8]],
+            },
+        ),
     ):
         result = asyncio.run(route.endpoint(CommandRequest(text="save the child")))
 
     print("Response:", result)
-    assert result["reached"] is True, f"expected reached=True, got {result}"
-    assert result["steps"] == 42, f"expected steps=42, got {result}"
     assert result["target_id"] == "child"
-    print("PASS — POST /command returns {reached: true, steps: 42}")
-
-    # Cleanup
-    goal_queue.put(None)
-    manager.shutdown()
+    assert result["confidence"] == 0.9
+    assert result["reached"] is True
+    assert result["fallen"] is False
+    assert result["steps"] == 42
+    assert result["total_reward"] == 12.5
+    assert result["final_dist"] == 0.4
+    assert result["min_dist"] == 0.4
+    assert result["obstacle_contacts"] == 0
+    assert result["hazard_steps"] == 0
+    assert result["mean_stance_slip"] == 0.12
+    assert result["mean_assist_force"] == 4.5
+    assert result["gait_score"] == 0.91
+    assert result["assist_scale"] == 0.95
+    assert result["balance_assist_scale"] == 0.85
+    assert result["gif_url"] == "/episode.gif"
+    assert result["trajectory"][-1] == [1.0, 1.0, 0.8]
+    print("PASS - POST /command returns mocked Gemini + rollout response")
 
 
 if __name__ == "__main__":

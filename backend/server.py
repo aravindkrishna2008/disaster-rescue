@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from disaster_env import DEFAULT_SCENE
+from disaster_env import DEFAULT_BALANCE_ASSIST_SCALE, DEFAULT_SCENE
 from gemini_client import SURVIVORS, get_gemini_target
 from rescue_runner import run_episode
 from scenes import GENERATED_SCENES, get_scene
@@ -35,9 +35,13 @@ _OUTPUT = _HERE / "output"
 _OUTPUT.mkdir(exist_ok=True)
 
 MODEL_PATH = os.environ.get(
-    "BATTLE_ANGEL_MODEL", str(_HERE / "models" / "ppo_fixed_six_final")
+    "BATTLE_ANGEL_MODEL", str(_HERE / "models" / "g1_locomotion_natural_final")
 )
-MAX_STEPS = int(os.environ.get("BATTLE_ANGEL_MAX_STEPS", "300"))
+MAX_STEPS = int(os.environ.get("BATTLE_ANGEL_MAX_STEPS", "900"))
+ASSIST_SCALE = float(os.environ.get("BATTLE_ANGEL_ASSIST_SCALE", "0.95"))
+BALANCE_ASSIST_SCALE = float(
+    os.environ.get("BATTLE_ANGEL_BALANCE_ASSIST_SCALE", str(DEFAULT_BALANCE_ASSIST_SCALE))
+)
 
 
 class CommandRequest(BaseModel):
@@ -74,14 +78,26 @@ def _run_scene(idx: int, max_steps: int) -> dict:
         model_path=MODEL_PATH,
         gif_path=str(gif_path),
         max_steps=max_steps,
+        assist_scale=ASSIST_SCALE,
+        balance_assist_scale=BALANCE_ASSIST_SCALE,
     )
     return {
         "scene_index": idx,
         "scene_name": name,
         "difficulty": scene.get("difficulty", "medium"),
         "reached": bool(result.get("reached", False)),
+        "fallen": bool(result.get("fallen", False)),
         "steps": int(result.get("steps", 0)),
         "total_reward": float(result.get("total_reward", 0.0)),
+        "final_dist": result.get("final_dist"),
+        "min_dist": result.get("min_dist"),
+        "obstacle_contacts": result.get("obstacle_contacts", 0),
+        "hazard_steps": result.get("hazard_steps", 0),
+        "mean_stance_slip": result.get("mean_stance_slip", 0.0),
+        "mean_assist_force": result.get("mean_assist_force", 0.0),
+        "gait_score": result.get("gait_score", 0.0),
+        "assist_scale": result.get("assist_scale", ASSIST_SCALE),
+        "balance_assist_scale": result.get("balance_assist_scale", BALANCE_ASSIST_SCALE),
         "trajectory": result.get("trajectory", []),
         "gif_url": f"/gifs/{gif_name}",
         "max_steps": max_steps,
@@ -107,6 +123,8 @@ def _run_episode_for(target_id: str) -> dict:
         model_path=MODEL_PATH,
         gif_path=str(gif_path),
         max_steps=MAX_STEPS,
+        assist_scale=ASSIST_SCALE,
+        balance_assist_scale=BALANCE_ASSIST_SCALE,
     )
 
 
@@ -131,7 +149,13 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health() -> dict:
-        return {"ok": True, "model": MODEL_PATH, "max_steps": MAX_STEPS}
+        return {
+            "ok": True,
+            "model": MODEL_PATH,
+            "max_steps": MAX_STEPS,
+            "assist_scale": ASSIST_SCALE,
+            "balance_assist_scale": BALANCE_ASSIST_SCALE,
+        }
 
     @app.get("/episode.gif")
     def latest_gif():
@@ -159,8 +183,18 @@ def create_app() -> FastAPI:
             "confidence": float(decision.get("confidence", 0.0)),
             "reason": decision.get("reason", ""),
             "reached": bool(result.get("reached", False)),
+            "fallen": bool(result.get("fallen", False)),
             "steps": int(result.get("steps", 0)),
             "total_reward": float(result.get("total_reward", 0.0)),
+            "final_dist": result.get("final_dist"),
+            "min_dist": result.get("min_dist"),
+            "obstacle_contacts": result.get("obstacle_contacts", 0),
+            "hazard_steps": result.get("hazard_steps", 0),
+            "mean_stance_slip": result.get("mean_stance_slip", 0.0),
+            "mean_assist_force": result.get("mean_assist_force", 0.0),
+            "gait_score": result.get("gait_score", 0.0),
+            "assist_scale": result.get("assist_scale", ASSIST_SCALE),
+            "balance_assist_scale": result.get("balance_assist_scale", BALANCE_ASSIST_SCALE),
             "gif_url": "/episode.gif",
             "trajectory": result.get("trajectory", []),
         }
