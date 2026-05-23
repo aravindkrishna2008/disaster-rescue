@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import ThreeArena from './ThreeArena';
 
 type TargetName = 'CHILD' | 'ADULT';
@@ -544,36 +545,23 @@ export default function Console() {
   return (
     <>
       <header className="topbar">
-        <div className="brand">
+        <Link href="/" className="brand">
           <div className="brand-mark" aria-hidden="true"></div>
           <div>
-            <div className="brand-name">
-              <em>Battle Angel</em>
-            </div>
+            <div className="brand-name"><em>Battle Angel</em></div>
             <div className="brand-sub mono">EPISODE RUNNER · v0.4.2</div>
           </div>
-        </div>
-        <div className="ep-state">
-          <span className={`pill ${stateKind}`}>
-            <span className="dot"></span>
-            <span>{stateText}</span>
-          </span>
-          <span className="pill mono">
-            <span className="dot"></span>
-            <span>GEMINI · GR-ER 1.5</span>
-          </span>
-          <span className="pill mono">
-            <span className="dot"></span>
-            <span>SECTOR · D-14 / WAREHOUSE</span>
-          </span>
+        </Link>
+        <div className="nav-tabs">
+          <Link href="/" className="nav-tab">Overview</Link>
+          <Link href="/console" className="nav-tab is-active">Interactive Console</Link>
+          <Link href="/mission-control" className="nav-tab">Mission Control</Link>
         </div>
         <div className="clock">
-          <div>
-            <span className="lbl">UTC</span> <span className="val mono">{clockUtc}</span>
-          </div>
-          <div>
-            <span className="lbl">EP</span> <span className="val mono">{epClock(elapsed)}</span>
-          </div>
+          <span className="lbl">UTC</span>
+          <span className="val mono">{clockUtc}</span>
+          <span className="lbl" style={{ marginLeft: 10 }}>EP</span>
+          <span className="val mono">{epClock(elapsed)}</span>
         </div>
       </header>
 
@@ -671,7 +659,13 @@ export default function Console() {
               <h2>
                 Tactical Visualizer <span className="tag">— 3D ground telemetry</span>
               </h2>
-              <span className="idx mono">[ 03 / WebGL ]</span>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span className={`pill ${stateKind}`} style={{ padding: '3px 8px', fontSize: '11px', height: '24px', display: 'inline-flex', alignItems: 'center' }}>
+                  <span className="dot"></span>
+                  <span>{stateText}</span>
+                </span>
+                <span className="idx mono">[ 03 / WebGL ]</span>
+              </div>
             </div>
             <div style={{ flex: 1, position: 'relative', width: '100%', minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
               <ThreeArena

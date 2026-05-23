@@ -336,7 +336,25 @@ def normalize_survivor_profiles(
 
 def parse_scene_response(response_text: str) -> SceneSpec:
     payload = extract_json_object(response_text)
-    return SceneSpec.model_validate_json(payload)
+    return SceneSpec.model_validate(normalize_scene_payload(json.loads(payload)))
+
+
+def normalize_scene_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Fill omitted catalog-backed fields before strict SceneSpec validation."""
+    normalized = dict(payload)
+    assets = []
+    for asset in normalized.get("assets", []) or []:
+        if not isinstance(asset, dict):
+            assets.append(asset)
+            continue
+        normalized_asset = dict(asset)
+        asset_id = str(normalized_asset.get("asset_id", "rubble_pile_small"))
+        definition = ASSET_CATALOG.get(asset_id, ASSET_CATALOG["rubble_pile_small"])
+        normalized_asset.setdefault("asset_id", definition.asset_id)
+        normalized_asset.setdefault("size", definition.size)
+        assets.append(normalized_asset)
+    normalized["assets"] = assets
+    return normalized
 
 
 def extract_interaction_output_text(interaction: Any) -> str:

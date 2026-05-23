@@ -22,6 +22,12 @@ import numpy as np
 DEFAULT_SCENE = {
     "robot_start": [-4.0, -4.0, 0.0],
     "survivor_pos": [4.0, 4.0, 0.0],
+    "terrain": {
+        "seed": 7,
+        "grid_size": 10,
+        "height_scale": 0.5,
+        "roughness_scale": 0.9,
+    },
     "obstacles": [
         {"pos": [0.0, 0.0, 1.0], "size": [0.5, 0.5, 1.0]},
         {"pos": [2.0, -2.0, 0.75], "size": [0.4, 0.4, 0.75]},
@@ -129,6 +135,105 @@ GAIT_OFFSETS = {
 
 WALK_STAGES = {"walk", "flat_walk", "low_assist_walk"}
 NAVIGATION_STAGES = {"target", "obstacle_nav", "natural_target"}
+
+ASSET_RGBA = {
+    "rubble_pile_small": "0.48 0.43 0.38 1",
+    "rubble_pile_large": "0.42 0.38 0.34 1",
+    "concrete_slab": "0.56 0.57 0.58 1",
+    "steel_beam": "0.38 0.41 0.44 1",
+    "collapsed_wall": "0.60 0.57 0.53 1",
+    "standing_wall": "0.66 0.62 0.58 1",
+}
+
+HAZARD_RGBA = {
+    "fire": "1.0 0.18 0.05 0.38",
+    "gas": "0.25 0.85 0.45 0.30",
+    "unstable_floor": "1.0 0.75 0.15 0.34",
+}
+
+
+def generate_random_terrain(
+    *,
+    seed: int | None = None,
+    difficulty: str = "medium",
+    grid_size: int = 10,
+) -> dict:
+    """Create lightweight terrain metadata for the Gymnasium environment."""
+    difficulty_scales = {
+        "easy": (0.28, 0.55, 0.08),
+        "medium": (0.5, 0.9, 0.14),
+        "hard": (0.72, 1.2, 0.22),
+    }
+    height_scale, roughness_scale, void_rate = difficulty_scales.get(
+        difficulty,
+        difficulty_scales["medium"],
+    )
+    rng = np.random.default_rng(seed)
+    heights = rng.uniform(0.0, 1.0, size=(grid_size, grid_size))
+
+    for _ in range(2):
+        padded = np.pad(heights, 1, mode="edge")
+        heights = (
+            padded[:-2, :-2]
+            + padded[:-2, 1:-1]
+            + padded[:-2, 2:]
+            + padded[1:-1, :-2]
+            + padded[1:-1, 1:-1] * 2
+            + padded[1:-1, 2:]
+            + padded[2:, :-2]
+            + padded[2:, 1:-1]
+            + padded[2:, 2:]
+        ) / 10.0
+
+    ridge_count = max(2, grid_size // 4)
+    for _ in range(ridge_count):
+        row = int(rng.integers(0, grid_size))
+        col = int(rng.integers(0, grid_size))
+        if rng.random() < 0.5:
+            heights[row, :] += rng.uniform(0.45, 0.9)
+            heights[max(0, row - 1) : min(grid_size, row + 2), :] += rng.uniform(0.1, 0.25)
+        else:
+            heights[:, col] += rng.uniform(0.45, 0.9)
+            heights[:, max(0, col - 1) : min(grid_size, col + 2)] += rng.uniform(0.1, 0.25)
+
+    slab_count = max(3, grid_size // 2)
+    rigid = np.zeros_like(heights)
+    for _ in range(slab_count):
+        width = int(rng.integers(1, 4))
+        depth = int(rng.integers(1, 3))
+        row = int(rng.integers(0, max(1, grid_size - depth)))
+        col = int(rng.integers(0, max(1, grid_size - width)))
+        slab_height = rng.uniform(0.45, 1.0)
+        heights[row : row + depth, col : col + width] += slab_height
+        rigid[row : row + depth, col : col + width] = 1.0
+
+    heights -= float(np.min(heights))
+    peak = float(np.max(heights))
+    if peak > 0:
+        heights = heights / peak
+
+    roughness = np.zeros_like(heights)
+    roughness[1:, :] = np.maximum(roughness[1:, :], np.abs(heights[1:, :] - heights[:-1, :]))
+    roughness[:, 1:] = np.maximum(roughness[:, 1:], np.abs(heights[:, 1:] - heights[:, :-1]))
+    rough_peak = float(np.max(roughness))
+    if rough_peak > 0:
+        roughness = roughness / rough_peak
+
+    danger = (rng.random((grid_size, grid_size)) < void_rate).astype(float)
+    danger = np.maximum(danger, rigid * 0.35)
+    roughness = np.maximum(roughness, danger * 0.9)
+
+    return {
+        "seed": seed,
+        "grid_size": grid_size,
+        "height_scale": height_scale,
+        "roughness_scale": roughness_scale,
+        "void_rate": void_rate,
+        "heights": np.round(heights * height_scale, 3).tolist(),
+        "roughness": np.round(roughness * roughness_scale, 3).tolist(),
+        "danger": np.round(danger, 3).tolist(),
+        "rigid": np.round(rigid, 3).tolist(),
+    }
 
 
 def _vec3(seq, default_z=0.0) -> list[float]:
@@ -364,6 +469,70 @@ def _build_xml(scene: dict) -> str:
         )
 
     return ET.tostring(root, encoding="unicode")
+
+
+def _normalize_terrain(terrain: dict | None, difficulty: str = "medium") -> dict:
+    if not terrain:
+        return generate_random_terrain(seed=None, difficulty=difficulty)
+    if "heights" not in terrain or "roughness" not in terrain:
+        return generate_random_terrain(
+            seed=terrain.get("seed"),
+            difficulty=difficulty,
+            grid_size=int(terrain.get("grid_size", 10)),
+        )
+    return terrain
+
+
+def _build_terrain_xml(terrain: dict) -> str:
+    heights = terrain.get("heights", [])
+    roughness = terrain.get("roughness", [])
+    danger = terrain.get("danger", [])
+    rigid = terrain.get("rigid", [])
+    grid_size = int(terrain.get("grid_size") or len(heights) or 0)
+    if grid_size <= 0:
+        return ""
+
+    cell = (WORLD_HALF * 2) / grid_size
+    half = cell / 2.0
+    xml = []
+    for row in range(grid_size):
+        for col in range(grid_size):
+            height = float(heights[row][col])
+            rough = float(roughness[row][col]) if roughness else 0.0
+            danger_level = float(danger[row][col]) if danger else 0.0
+            rigid_level = float(rigid[row][col]) if rigid else 0.0
+            if height <= 0.01 and rough <= 0.05 and danger_level <= 0.0:
+                continue
+            x = -WORLD_HALF + half + col * cell
+            y = -WORLD_HALF + half + row * cell
+            slab_boost = 0.08 if rigid_level > 0 else 0.0
+            z = max(0.006, (height + slab_boost) / 2.0)
+            red = 0.32 + min(rough, 1.2) * 0.24 + danger_level * 0.18
+            green = 0.36 + min(height, 0.75) * 0.28 - danger_level * 0.12
+            blue = 0.32 + rigid_level * 0.14
+            xml.append(
+                f'    <geom name="terrain_{row}_{col}" type="box" pos="{x:.3f} {y:.3f} {z:.3f}" '
+                f'size="{half:.3f} {half:.3f} {z:.3f}" rgba="{red:.3f} {green:.3f} {blue:.3f} 0.82" '
+                f'contype="0" conaffinity="0"/>\n'
+            )
+    return "".join(xml)
+
+
+def _terrain_cell_value(terrain: dict, xy: np.ndarray, key: str) -> float:
+    values = terrain.get(key)
+    grid_size = int(terrain.get("grid_size") or len(values or []) or 0)
+    if not values or grid_size <= 0:
+        return 0.0
+    col = int(np.clip((xy[0] + WORLD_HALF) / (WORLD_HALF * 2) * grid_size, 0, grid_size - 1))
+    row = int(np.clip((xy[1] + WORLD_HALF) / (WORLD_HALF * 2) * grid_size, 0, grid_size - 1))
+    return float(values[row][col])
+
+
+def _terrain_blocks_motion(terrain: dict, xy: np.ndarray) -> bool:
+    height = _terrain_cell_value(terrain, xy, "heights")
+    roughness = _terrain_cell_value(terrain, xy, "roughness")
+    danger = _terrain_cell_value(terrain, xy, "danger")
+    return height >= 0.58 or roughness >= 1.0 or danger >= 1.0
 
 
 class DisasterEnv(gym.Env):

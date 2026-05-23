@@ -277,6 +277,14 @@ def main():
     if not args.smoke and not wrote_compatibility:
         console.print("[yellow]Skipped compatibility model write for non-default model name.[/]")
 
+    console.print("[bold cyan]Exporting run manifest to runs/…[/]")
+    export_run(
+        final_path,
+        run_name=f"{MODEL_NAME}_final",
+        total_steps=TOTAL_STEPS,
+        n_envs=N_ENVS,
+    )
+
 
 if __name__ == "__main__":
     main()

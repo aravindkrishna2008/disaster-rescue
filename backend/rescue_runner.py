@@ -20,6 +20,7 @@ Returns:
 
 import argparse
 import os
+import threading
 import numpy as np
 import imageio
 from stable_baselines3 import PPO
@@ -72,6 +73,7 @@ def run_episode(
     model = PPO.load(model_path, device="cpu")
 
     trajectory: list[list[float]] = []
+    rollout: list[dict] = []
     frames: list[np.ndarray] = []
     total_reward = 0.0
     reached = False
@@ -82,13 +84,29 @@ def run_episode(
     final_info = {}
 
     for _ in range(max_steps):
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
         # Capture frame before step (so first frame shows start pose)
         frame = env.render()
         if frame is not None:
             frames.append(frame)
 
         action, _ = model.predict(obs, deterministic=True)
+        if record_rollout:
+            rollout.append(
+                {
+                    "obs": obs.tolist(),
+                    "action": np.asarray(action).tolist(),
+                }
+            )
+
         obs, reward, terminated, truncated, info = env.step(action)
+
+        if record_rollout and rollout:
+            rollout[-1]["reward"] = float(reward)
+            rollout[-1]["terminated"] = bool(terminated)
+            rollout[-1]["truncated"] = bool(truncated)
 
         total_reward += float(reward)
         base_pos = info.get("base_pos", obs[:3])
@@ -99,6 +117,14 @@ def run_episode(
         final_heading_error = info.get("heading_error")
         fallen = bool(info.get("fallen", False))
         final_info = info
+
+        if info.get("survivor_detected") and detection_event is None:
+            detection_event = {
+                "step": len(trajectory),
+                "robot_pos": robot_pos,
+                "signal": info.get("detection_signal"),
+                "radius": info.get("detection_radius"),
+            }
 
         if terminated or truncated:
             reached = info.get("reached", False)
@@ -115,7 +141,7 @@ def run_episode(
     if frames:
         imageio.mimsave(gif_path, frames, fps=GIF_FPS, loop=0)
 
-    return {
+    result = {
         "trajectory": trajectory,
         "reached": reached,
         "fallen": fallen,
@@ -137,6 +163,9 @@ def run_episode(
         "assist_scale": round(float(final_info.get("assist_scale", assist_scale)), 3),
         "balance_assist_scale": round(float(final_info.get("balance_assist_scale", balance_assist_scale)), 3),
     }
+    if record_rollout:
+        result["rollout"] = rollout
+    return result
 
 
 def run_generated_scene_suite(

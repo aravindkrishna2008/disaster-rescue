@@ -1,0 +1,24 @@
+{
+  "id": "ppo_buried_detection_bc_20260523_143836",
+  "name": "ppo_buried_detection_bc_20260523_143836",
+  "model_path": "models/ppo_buried_detection_bc_20260523_143836.zip",
+  "total_steps": 20,
+  "n_envs": 8,
+  "obs_dim": 21,
+  "max_steps_eval": 300,
+  "policy_network": "MLP 256 \u00d7 256",
+  "batch_size": 256,
+  "n_steps": 2048,
+  "gamma": 0.99,
+  "gae_lambda": 0.95,
+  "clip_range": 0.2,
+  "tensorboard_log": "tb_logs/PPO_9",
+  "git_commit": "5378399",
+  "exported_at": "2026-05-23T21:39:46.435313+00:00",
+  "checkpoints": [
+    "ppo_buried_detection_bc_20260523_143836.zip"
+  ],
+  "init_from": "runs/ppo_buried_detection_final",
+  "bc_transitions": 300,
+  "bc_epochs": 1
+}

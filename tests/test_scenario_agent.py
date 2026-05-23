@@ -98,6 +98,26 @@ def test_extract_json_object_handles_markdown_fences() -> None:
     assert json.loads(payload)["description"] == "earthquake collapse"
 
 
+def test_generate_scene_accepts_assets_without_sizes() -> None:
+    payload = json.loads(make_scene_json())
+    for asset in payload["assets"]:
+        asset.pop("size", None)
+    fake = FakeManagedAgent(json.dumps(payload))
+    scenario_agent = ScenarioAgent(managed_agent=fake)  # type: ignore[arg-type]
+
+    scene = scenario_agent.generate_scene(
+        "Collapsed apartment after earthquake.",
+        survivor_count=1,
+        survivor_profiles=[SurvivorProfile(name="Maya", type="baby", priority="critical")],
+        difficulty="easy",
+    )
+
+    assert scene.assets[0].asset_id == "rubble_pile_small"
+    assert scene.assets[0].size == ASSET_CATALOG["rubble_pile_small"].size
+    assert scene.assets[1].asset_id == "standing_wall"
+    assert scene.assets[1].size == ASSET_CATALOG["standing_wall"].size
+
+
 def test_generate_scene_preserves_survivor_profiles_and_repairs_output() -> None:
     fake = FakeManagedAgent(make_scene_json())
     scenario_agent = ScenarioAgent(managed_agent=fake)  # type: ignore[arg-type]
