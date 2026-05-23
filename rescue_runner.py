@@ -72,7 +72,7 @@ def run_episode(
         obs, reward, terminated, truncated, info = env.step(action)
 
         total_reward += float(reward)
-        robot_pos = obs[:3].tolist()
+        robot_pos = [float(obs[0]), float(obs[1]), 0.0]
         trajectory.append(robot_pos)
 
         if terminated or truncated:
