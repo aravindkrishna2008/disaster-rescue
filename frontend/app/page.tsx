@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import LandingReport from './LandingReport';
 import TrainingRuns from './TrainingRuns';
+import WorkflowNav from './WorkflowNav';
 
 const tsNow = () => {
   const d = new Date();
@@ -31,12 +32,7 @@ export default function Page() {
             <div className="brand-sub mono">EPISODE RUNNER · v0.4.2</div>
           </div>
         </Link>
-        <div className="nav-tabs">
-          <Link href="/" className="nav-tab is-active">Overview</Link>
-          <Link href="/console" className="nav-tab">Interactive Console</Link>
-          <Link href="/mission-control" className="nav-tab">Mission Control</Link>
-          <Link href="/generate" className="nav-tab">Scene Generator</Link>
-        </div>
+        <WorkflowNav active="overview" />
         <div className="clock">
           <span className="lbl">UTC</span>
           <span className="val mono">{clockUtc}</span>
@@ -59,17 +55,36 @@ export default function Page() {
           trained in MuJoCo, the agent makes real-time decisions to prioritize and rescue survivors.
         </p>
         <div className="hero-cta-group">
-          <Link className="btn-primary" href="/console">
-            Launch Interactive Console
+          <Link className="btn-primary" href="/mission-control">
+            Enter Training Gym
           </Link>
-          <Link className="btn-secondary" href="/mission-control">
-            Launch Mission Control
+          <Link className="btn-secondary" href="/generate">
+            Generate a Scene
           </Link>
         </div>
       </header>
 
+      <section className="workflow-rail" aria-label="Policy deployment workflow">
+        <div className="workflow-rail-heading mono">POLICY PATH / SIMULATION TO DEPLOYMENT</div>
+        <Link href="/mission-control" className="workflow-stage">
+          <span className="workflow-step mono">01</span>
+          <strong>Training Gym</strong>
+          <span>Train and validate PPO across eight environments.</span>
+        </Link>
+        <Link href="/generate" className="workflow-stage">
+          <span className="workflow-step mono">02</span>
+          <strong>Scene Generator</strong>
+          <span>Create candidate real-world rescue scenes.</span>
+        </Link>
+        <Link href="/console" className="workflow-stage">
+          <span className="workflow-step mono">03</span>
+          <strong>Interactive Console</strong>
+          <span>Visualize the policy response and inspect outcomes.</span>
+        </Link>
+      </section>
+
       {/* System Architecture Bento Section */}
-      <section className="landing-section" style={{ paddingTop: '30px', paddingBottom: '30px' }}>
+      <section className="landing-section">
         <div className="landing-section-hd">
           <h2>
             System Pillars <span>— Architectural Breakdown</span>
@@ -151,10 +166,10 @@ export default function Page() {
       <LandingReport />
 
       {/* Training & Model Suite Section */}
-      <section className="landing-section report-section" style={{ paddingTop: '30px' }}>
+      <section className="landing-section report-section">
         <div className="landing-section-hd">
           <h2>
-            Training Pipeline <span>— Progress Metrics</span>
+            Training Gym Archive <span>— PPO Progress Metrics</span>
           </h2>
           <span className="sec-idx mono">[ SECTION 08 / METRICS ]</span>
         </div>
@@ -165,20 +180,6 @@ export default function Page() {
       {/* Footer */}
       <footer className="landing-footer">
         <p>© 2026 Battle Angel Robotics · Hackathon Project Ground Rescue</p>
-        <p>
-          Powered by{' '}
-          <a href="https://deepmind.google/technologies/gemini/" target="_blank" rel="noopener noreferrer">
-            Gemini 1.5 Flash
-          </a>{' '}
-          ·{' '}
-          <a href="https://stable-baselines3.readthedocs.io/" target="_blank" rel="noopener noreferrer">
-            Stable-Baselines3
-          </a>{' '}
-          ·{' '}
-          <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">
-            Three.js
-          </a>
-        </p>
       </footer>
     </div>
   );

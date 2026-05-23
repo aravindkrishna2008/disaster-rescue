@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import ThreeArena from './ThreeArena';
+import WorkflowNav from './WorkflowNav';
 
 type TargetName = 'CHILD' | 'ADULT';
 
@@ -552,11 +553,7 @@ export default function Console() {
             <div className="brand-sub mono">EPISODE RUNNER · v0.4.2</div>
           </div>
         </Link>
-        <div className="nav-tabs">
-          <Link href="/" className="nav-tab">Overview</Link>
-          <Link href="/console" className="nav-tab is-active">Interactive Console</Link>
-          <Link href="/mission-control" className="nav-tab">Mission Control</Link>
-        </div>
+        <WorkflowNav active="console" />
         <div className="clock">
           <span className="lbl">UTC</span>
           <span className="val mono">{clockUtc}</span>
@@ -571,7 +568,7 @@ export default function Console() {
           <div className="panel">
             <div className="panel-hd">
               <h2>
-                Command <span className="tag">— operator to robot</span>
+                Policy Trial <span className="tag">— operator to robot</span>
               </h2>
               <span className="idx mono">[ 01 / CMD ]</span>
             </div>
@@ -657,7 +654,7 @@ export default function Console() {
           <div className="panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 22px' }}>
             <div className="panel-hd">
               <h2>
-                Tactical Visualizer <span className="tag">— 3D ground telemetry</span>
+                Tactical Visualizer <span className="tag">— live policy reaction playback</span>
               </h2>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <span className={`pill ${stateKind}`} style={{ padding: '3px 8px', fontSize: '11px', height: '24px', display: 'inline-flex', alignItems: 'center' }}>

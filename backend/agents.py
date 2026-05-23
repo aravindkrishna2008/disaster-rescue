@@ -10,7 +10,7 @@ from typing import Any
 from google import genai
 
 DEFAULT_BASE_AGENT = "antigravity-preview-05-2026"
-DEFAULT_SMOKE_TEST_MODEL = "gemini-2.5-flash"
+DEFAULT_SMOKE_TEST_MODEL = "gemini-3.5-flash"
 ENV_PATH = Path(__file__).with_name(".env")
 
 

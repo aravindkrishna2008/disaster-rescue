@@ -361,7 +361,7 @@ export default function LandingReport() {
               {' '}
               View live runs in{' '}
               <Link href="/mission-control" className="report-inline-link">
-                Mission Control
+                Training Gym
               </Link>
               .
             </>
