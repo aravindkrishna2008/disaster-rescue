@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from disaster_env import DEFAULT_SCENE
 from gemini_client import SURVIVORS, get_gemini_target
 from rescue_runner import run_episode
+from scenes import GENERATED_SCENES, get_scene
 
 _HERE = Path(__file__).resolve().parent
 _STATIC = _HERE / "static"
@@ -41,6 +42,50 @@ MAX_STEPS = int(os.environ.get("BATTLE_ANGEL_MAX_STEPS", "300"))
 
 class CommandRequest(BaseModel):
     text: str
+
+
+class SceneRunRequest(BaseModel):
+    max_steps: int | None = None
+
+
+def _scene_summary(idx: int, scene: dict) -> dict:
+    return {
+        "index": idx,
+        "name": scene["name"],
+        "difficulty": scene.get("difficulty", "medium"),
+        "robot_start": scene.get("robot_start"),
+        "survivor_pos": scene.get("survivor_pos"),
+        "obstacle_count": len(scene.get("obstacles", [])),
+        "hazard_count": len(scene.get("hazards", [])),
+    }
+
+
+def _gif_filename_for(idx: int, name: str) -> str:
+    return f"{idx + 1:02d}_{name}.gif"
+
+
+def _run_scene(idx: int, max_steps: int) -> dict:
+    scene = get_scene(idx)
+    name = scene["name"]
+    gif_name = _gif_filename_for(idx, name)
+    gif_path = _OUTPUT / gif_name
+    result = run_episode(
+        scene=scene,
+        model_path=MODEL_PATH,
+        gif_path=str(gif_path),
+        max_steps=max_steps,
+    )
+    return {
+        "scene_index": idx,
+        "scene_name": name,
+        "difficulty": scene.get("difficulty", "medium"),
+        "reached": bool(result.get("reached", False)),
+        "steps": int(result.get("steps", 0)),
+        "total_reward": float(result.get("total_reward", 0.0)),
+        "trajectory": result.get("trajectory", []),
+        "gif_url": f"/gifs/{gif_name}",
+        "max_steps": max_steps,
+    }
 
 
 def _scene_for_target(target_id: str) -> dict:

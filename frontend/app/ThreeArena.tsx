@@ -306,7 +306,7 @@ export default function ThreeArena({
           const scale = 1 + (elapsed % 1.5) * 1.8;
           ring.scale.set(scale, scale, 1);
           
-          const mat = ring.material as THREE.BasicMaterial;
+          const mat = ring.material as THREE.MeshBasicMaterial;
           mat.opacity = 0.4 * (1 - (elapsed % 1.5) / 1.5);
         });
 
@@ -341,29 +341,18 @@ export default function ThreeArena({
       renderer.dispose();
       
       // dispose geometries/materials
-      obstacleGeometries.forEach((g) => g.dispose());
-      obstacleMaterial.dispose();
-      obstacleWireframeMaterial.dispose();
-      torusGeom.dispose();
-      torusMat.dispose();
-      discGeom.dispose();
-      discMat.dispose();
-      orbGeom.dispose();
-      orbMat.dispose();
-      beamGeom.dispose();
-      beamMat.dispose();
-      ringGeom.dispose();
-      ringMat.dispose();
-      bodyGeom.dispose();
-      bodyMat.dispose();
-      coreGeom.dispose();
-      coreMat.dispose();
-      arrowGeom.dispose();
-      arrowMat.dispose();
-      headGlowGeom.dispose();
-      headGlowMat.dispose();
-      pathGeom.dispose();
-      pathMat.dispose();
+      scene.traverse((object: any) => {
+        if (object.geometry) {
+          object.geometry.dispose();
+        }
+        if (object.material) {
+          if (Array.isArray(object.material)) {
+            object.material.forEach((mat) => mat.dispose());
+          } else {
+            object.material.dispose();
+          }
+        }
+      });
     };
   }, [obstacles, hazards, survivors]);
 
