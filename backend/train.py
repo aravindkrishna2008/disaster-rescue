@@ -17,7 +17,7 @@ from scenes import GENERATED_SCENES, get_scene
 
 console = Console()
 MODELS_DIR    = "./models"
-TOTAL_STEPS   = 500_000
+TOTAL_STEPS   = int(os.environ.get("BATTLE_ANGEL_TRAIN_STEPS", "500000"))
 N_ENVS        = len(GENERATED_SCENES)
 CHECKPOINT_FREQ = 20_000   # save every N steps (per env)
 MODEL_NAME    = "ppo_buried_detection"

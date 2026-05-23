@@ -1,11 +1,50 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import TrainingRuns from './TrainingRuns';
 
+const tsNow = () => {
+  const d = new Date();
+  return [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()]
+    .map((v) => String(v).padStart(2, '0'))
+    .join(':');
+};
+
 export default function Page() {
+  const [clockUtc, setClockUtc] = useState('--:--:--');
+
+  useEffect(() => {
+    setClockUtc(tsNow());
+    const id = setInterval(() => setClockUtc(tsNow()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--ink)' }}>
+      <header className="topbar">
+        <Link href="/" className="brand">
+          <div className="brand-mark" aria-hidden="true"></div>
+          <div>
+            <div className="brand-name"><em>Battle Angel</em></div>
+            <div className="brand-sub mono">EPISODE RUNNER · v0.4.2</div>
+          </div>
+        </Link>
+        <div className="nav-tabs">
+          <Link href="/" className="nav-tab is-active">Overview</Link>
+          <Link href="/console" className="nav-tab">Interactive Console</Link>
+          <Link href="/mission-control" className="nav-tab">Mission Control</Link>
+        </div>
+        <div className="clock">
+          <span className="lbl">UTC</span>
+          <span className="val mono">{clockUtc}</span>
+          <span className="lbl" style={{ marginLeft: 10 }}>STATUS</span>
+          <span className="val mono" style={{ color: 'var(--ok)' }}>ONLINE</span>
+        </div>
+      </header>
+
       {/* Hero Section */}
-      <header className="landing-hero">
+      <header className="landing-hero" style={{ borderBottom: '1px solid var(--rule)' }}>
         <h1>
           PROJECT <span>BATTLE ANGEL</span>
         </h1>
@@ -18,7 +57,10 @@ export default function Page() {
           trained in MuJoCo, the agent makes real-time decisions to prioritize and rescue survivors.
         </p>
         <div className="hero-cta-group">
-          <Link className="btn-primary" href="/mission-control">
+          <Link className="btn-primary" href="/console">
+            Launch Interactive Console
+          </Link>
+          <Link className="btn-secondary" href="/mission-control">
             Launch Mission Control
           </Link>
         </div>

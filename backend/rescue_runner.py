@@ -16,6 +16,7 @@ Returns:
 """
 
 import os
+import threading
 import numpy as np
 import imageio
 from stable_baselines3 import PPO
@@ -34,6 +35,7 @@ def run_episode(
     gif_path: str = None,
     max_steps: int = 600,
     record_rollout: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """
     Run one episode of the trained policy in the given scene.
@@ -64,8 +66,12 @@ def run_episode(
     total_reward = 0.0
     reached = False
     detection_event = None
+    cancelled = False
 
     for _ in range(max_steps):
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
         # Capture frame before step (so first frame shows start pose)
         frame = env.render()
         if frame is not None:
@@ -121,6 +127,7 @@ def run_episode(
         "gif_path": gif_path,
         "total_reward": round(total_reward, 2),
         "detection_event": detection_event,
+        "cancelled": cancelled,
     }
     if record_rollout:
         result["rollout"] = rollout

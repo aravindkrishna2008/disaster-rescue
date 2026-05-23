@@ -12,9 +12,9 @@
   "gamma": 0.99,
   "gae_lambda": 0.95,
   "clip_range": 0.2,
-  "tensorboard_log": "tb_logs/PPO_8",
-  "git_commit": "ab047d6",
-  "exported_at": "2026-05-23T20:36:57.911122+00:00",
+  "tensorboard_log": "tb_logs/PPO_9",
+  "git_commit": "3043a9f",
+  "exported_at": "2026-05-23T21:22:35.333807+00:00",
   "checkpoints": [
     "ppo_buried_detection_160000_steps.zip",
     "ppo_buried_detection_320000_steps.zip",
