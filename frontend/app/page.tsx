@@ -34,6 +34,7 @@ export default function Page() {
           <Link href="/" className="nav-tab is-active">Overview</Link>
           <Link href="/console" className="nav-tab">Interactive Console</Link>
           <Link href="/mission-control" className="nav-tab">Mission Control</Link>
+          <Link href="/generate" className="nav-tab">Scene Generator</Link>
         </div>
         <div className="clock">
           <span className="lbl">UTC</span>

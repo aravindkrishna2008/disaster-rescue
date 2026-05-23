@@ -363,6 +363,7 @@ export default function MissionControlPage() {
           <Link href="/" className="nav-tab">Overview</Link>
           <Link href="/console" className="nav-tab">Interactive Console</Link>
           <Link href="/mission-control" className="nav-tab is-active">Mission Control</Link>
+          <Link href="/generate" className="nav-tab">Scene Generator</Link>
         </div>
         <div className="clock">
           <span className="lbl">UTC</span>

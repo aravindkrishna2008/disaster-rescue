@@ -19,6 +19,8 @@ const nextConfig = {
       { source: '/train/cancel', destination: `${backend}/train/cancel` },
       { source: '/run-gifs/:path*', destination: `${backend}/run-gifs/:path*` },
       { source: '/health', destination: `${backend}/health` },
+      { source: '/generate-scene', destination: `${backend}/generate-scene` },
+      { source: '/generate-prompt', destination: `${backend}/generate-prompt` },
     ];
   },
 };

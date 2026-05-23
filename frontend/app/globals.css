@@ -14,7 +14,7 @@
   --ok:        #2a5c3a;
 }
 *{ box-sizing:border-box; }
-html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink); }
+html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink); overflow-x:hidden; }
 body{
   font-family:'Newsreader', Georgia, 'Times New Roman', serif;
   font-size:14px; line-height:1.5;
