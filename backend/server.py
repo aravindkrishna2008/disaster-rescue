@@ -129,6 +129,8 @@ def create_app() -> FastAPI:
         def index() -> str:
             return (_STATIC / "index.html").read_text()
 
+    app.mount("/gifs", StaticFiles(directory=_OUTPUT), name="gifs")
+
     @app.get("/health")
     def health() -> dict:
         return {"ok": True, "model": MODEL_PATH, "max_steps": MAX_STEPS}
@@ -143,6 +145,26 @@ def create_app() -> FastAPI:
         if not gifs:
             raise HTTPException(status_code=404, detail="no episode gif yet")
         return FileResponse(gifs[0], media_type="image/gif")
+
+    @app.get("/scenes")
+    def list_scenes() -> dict:
+        scenes = [_scene_summary(i, scene) for i, scene in enumerate(GENERATED_SCENES)]
+        return {
+            "scenes": scenes,
+            "default_max_steps": MAX_STEPS,
+        }
+
+    @app.post("/scene/{idx}/run")
+    async def run_scene(idx: int, req: SceneRunRequest) -> dict:
+        if idx < 0 or idx >= len(GENERATED_SCENES):
+            raise HTTPException(status_code=404, detail=f"scene {idx} not found")
+
+        max_steps = req.max_steps or MAX_STEPS
+        try:
+            result = await asyncio.to_thread(_run_scene, idx, max_steps)
+            return result
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=500, detail=f"model not found: {e}") from e
 
     @app.post("/command")
     async def command(req: CommandRequest) -> dict:
