@@ -1,8 +1,8 @@
-"""
-Track 2 owns this file. This stub lets Track 3 run independently.
-Replace the body of get_gemini_target() with the real Gemini call.
-"""
-import os
+from __future__ import annotations
+
+import json
+
+from agents import DEFAULT_MODEL, ManagedAgent, configure_google_api_key
 
 SURVIVORS = {
     "child": (3.2, -1.5),
@@ -11,47 +11,93 @@ SURVIVORS = {
 
 
 def get_gemini_target(command: str, survivors: dict) -> dict:
-    """
-    Returns {"target_id": "child"|"adult", "confidence": float, "reason": str}.
-    Stub returns "child" always — Track 2 replaces with real Gemini call.
-    """
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        return {"target_id": "child", "confidence": 0.5, "reason": "stub (no GEMINI_API_KEY)"}
+    """Return {"target_id": str, "confidence": float, "reason": str} via ADK."""
+    try:
+        configure_google_api_key()
+    except Exception:
+        return {
+            "target_id": _fallback_target(survivors),
+            "confidence": 0.5,
+            "reason": "stub (no GOOGLE_API_KEY)",
+        }
 
     try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=api_key)
-
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={
-                "response_mime_type": "application/json",
-            },
+        agent = ManagedAgent(
+            agent_id="rescue-target-selector",
+            system_prompt=_target_system_prompt(survivors),
+            base_agent=DEFAULT_MODEL,
+            output_mime_type="application/json",
+            description="Selects the next survivor target for the rescue robot.",
         )
+        response_text = agent.run_text(_target_user_prompt(command))
+        return _parse_target_response(response_text, survivors)
+    except Exception as exc:
+        print(f"[gemini_client] fallback triggered: {exc}")
+        return {
+            "target_id": _fallback_target(survivors),
+            "confidence": 0.0,
+            "reason": f"fallback: {exc}",
+        }
 
-        survivor_desc = "\n".join(
-            f"- {sid}: position {pos}" for sid, pos in survivors.items()
-        )
 
-        prompt = f"""You are controlling a disaster rescue robot.
+def _target_system_prompt(survivors: dict) -> str:
+    survivor_desc = "\n".join(
+        f"- {survivor_id}: position {position}"
+        for survivor_id, position in survivors.items()
+    )
+    valid_targets = " | ".join(f'"{survivor_id}"' for survivor_id in survivors)
+    return f"""You are controlling a disaster rescue robot.
 Survivors in the environment:
 {survivor_desc}
 
-Natural language command: "{command}"
+Choose which survivor to rescue next.
+Respond only with JSON matching this schema:
+{{"target_id": {valid_targets}, "confidence": 0.0-1.0, "reason": "<one sentence>"}}"""
 
-Respond with JSON choosing which survivor to rescue next.
-Schema: {{"target_id": "child" | "adult", "confidence": 0.0-1.0, "reason": "<one sentence>"}}"""
 
-        response = model.generate_content(prompt)
-        import json
-        data = json.loads(response.text)
-        if data.get("target_id") not in survivors:
-            raise ValueError(f"Unknown target_id: {data.get('target_id')}")
-        return data
+def _target_user_prompt(command: str) -> str:
+    return f'Natural language command: "{command}"'
 
-    except Exception as e:
-        # Fallback — never crash the demo
-        print(f"[gemini_client] fallback triggered: {e}")
-        return {"target_id": "child", "confidence": 0.0, "reason": f"fallback: {e}"}
+
+def _parse_target_response(response_text: str, survivors: dict) -> dict:
+    data = json.loads(_extract_json(response_text))
+    target_id = data.get("target_id")
+    if target_id not in survivors:
+        raise ValueError(f"Unknown target_id: {target_id}")
+
+    try:
+        confidence = float(data.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    reason = data.get("reason", "")
+    if not isinstance(reason, str):
+        reason = str(reason)
+
+    return {
+        "target_id": target_id,
+        "confidence": confidence,
+        "reason": reason,
+    }
+
+
+def _extract_json(response_text: str) -> str:
+    stripped = response_text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise ValueError("Gemini response did not contain a JSON object.")
+    return stripped[start : end + 1]
+
+
+def _fallback_target(survivors: dict) -> str:
+    return next(iter(survivors), "child")

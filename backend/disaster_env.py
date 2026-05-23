@@ -301,7 +301,7 @@ def _norm_or_zero(vec: np.ndarray) -> np.ndarray:
 
 
 def _add_scene_context(worldbody: ET.Element, scene: dict) -> None:
-    for i, terrain in enumerate(scene.get("terrain", [])[:TERRAIN_COUNT]):
+    for i, terrain in enumerate(_terrain_context_geoms(scene)[:TERRAIN_COUNT]):
         pos = _vec3(terrain.get("pos", [0.0, 0.0, 0.03]), default_z=0.03)
         size = list(terrain.get("size", [0.6, 0.6, 0.03]))
         if len(size) == 2:
@@ -333,7 +333,7 @@ def _add_scene_context(worldbody: ET.Element, scene: dict) -> None:
                 "type": "box",
                 "pos": _fmt_vec(pos),
                 "size": _fmt_vec(size[:3]),
-                "rgba": "0.55 0.27 0.07 0.82",
+                "rgba": _obstacle_rgba(obstacle),
                 "contype": "1",
                 "conaffinity": "1",
                 "friction": "0.85 0.01 0.0001",
@@ -351,11 +351,54 @@ def _add_scene_context(worldbody: ET.Element, scene: dict) -> None:
                 "type": "cylinder",
                 "pos": _fmt_vec([center[0], center[1], 0.01]),
                 "size": _fmt_vec([radius, 0.01]),
-                "rgba": "1.0 0.15 0.15 0.28",
+                "rgba": _hazard_rgba(hazard),
                 "contype": "0",
                 "conaffinity": "0",
             },
         )
+
+
+def _terrain_context_geoms(scene: dict) -> list[dict]:
+    terrain = scene.get("terrain", [])
+    if isinstance(terrain, list):
+        return terrain
+    return scene.get("terrain_geoms", [])
+
+
+def _obstacle_rgba(obstacle: dict) -> str:
+    if obstacle.get("rgba"):
+        return str(obstacle["rgba"])
+    if obstacle.get("color"):
+        return _hex_to_rgba(str(obstacle["color"]), alpha=0.86)
+    palette = {
+        "rubble_pile_small": "0.48 0.42 0.35 0.86",
+        "rubble_pile_large": "0.39 0.35 0.31 0.88",
+        "concrete_slab": "0.56 0.58 0.60 0.88",
+        "steel_beam": "0.34 0.41 0.47 0.9",
+        "collapsed_wall": "0.62 0.57 0.50 0.88",
+        "standing_wall": "0.68 0.62 0.55 0.86",
+    }
+    return palette.get(str(obstacle.get("asset_id", "")), "0.55 0.27 0.07 0.82")
+
+
+def _hazard_rgba(hazard: dict) -> str:
+    if hazard.get("rgba"):
+        return str(hazard["rgba"])
+    palette = {
+        "fire": "1.0 0.24 0.08 0.34",
+        "gas": "0.25 0.85 0.45 0.30",
+        "flood": "0.18 0.48 0.95 0.30",
+        "unstable_floor": "1.0 0.75 0.15 0.34",
+    }
+    return palette.get(str(hazard.get("type", "")), "1.0 0.15 0.15 0.28")
+
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    color = hex_color.lstrip("#")
+    if len(color) != 6:
+        return "0.55 0.27 0.07 0.82"
+    channels = [int(color[index : index + 2], 16) / 255.0 for index in (0, 2, 4)]
+    return f"{channels[0]:.3f} {channels[1]:.3f} {channels[2]:.3f} {alpha:.3f}"
 
 
 def _build_xml(scene: dict) -> str:
@@ -450,6 +493,12 @@ def _build_xml(scene: dict) -> str:
             "conaffinity": "0",
         },
     )
+
+    terrain_xml = _build_terrain_xml(scene.get("terrain", {}))
+    if terrain_xml:
+        terrain_root = ET.fromstring(f"<terrain>{terrain_xml}</terrain>")
+        for geom in terrain_root:
+            worldbody.insert(1, geom)
 
     _add_scene_context(worldbody, scene)
 
@@ -550,7 +599,12 @@ class DisasterEnv(gym.Env):
         super().__init__()
         if curriculum_stage not in CURRICULUM_STAGES:
             raise ValueError(f"Unknown curriculum_stage {curriculum_stage!r}")
-        self.scene = scene or DEFAULT_SCENE
+        self.scene = dict(scene or DEFAULT_SCENE)
+        self._terrain = _normalize_terrain(
+            self.scene.get("terrain"),
+            difficulty=self.scene.get("difficulty", DEFAULT_SCENE["difficulty"]),
+        )
+        self.scene["terrain"] = self._terrain
         self.render_mode = render_mode
         self.curriculum_stage = curriculum_stage
         self.assist_scale = float(1.0 if assist_scale is None and assist_enabled else assist_scale or 0.0)
@@ -621,7 +675,7 @@ class DisasterEnv(gym.Env):
         self._obstacle_geom_ids.discard(-1)
         self._terrain_geom_ids = {
             mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_GEOM, f"scene_terrain_{i}")
-            for i in range(len(self.scene.get("terrain", [])[:TERRAIN_COUNT]))
+            for i in range(len(_terrain_context_geoms(self.scene)[:TERRAIN_COUNT]))
         }
         self._terrain_geom_ids.discard(-1)
         self._support_geom_ids = {self._ground_geom_id} | self._terrain_geom_ids
@@ -1311,6 +1365,10 @@ class DisasterEnv(gym.Env):
             "hazard_steps": self._hazard_step_count,
             "in_hazard": in_hazard,
             "min_hazard_clearance": hazard_clearance,
+            "terrain_height": _terrain_cell_value(self._terrain, self._base_pos()[:2], "heights"),
+            "terrain_roughness": _terrain_cell_value(self._terrain, self._base_pos()[:2], "roughness"),
+            "terrain_danger": _terrain_cell_value(self._terrain, self._base_pos()[:2], "danger"),
+            "terrain_blocked": _terrain_blocks_motion(self._terrain, self._base_pos()[:2]),
             "left_foot_contact": foot_metrics["left_contact"],
             "right_foot_contact": foot_metrics["right_contact"],
             "stance_slip": foot_metrics["stance_slip"],

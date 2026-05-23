@@ -23,20 +23,31 @@ import threading
 import time
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from disaster_env import DEFAULT_BALANCE_ASSIST_SCALE, DEFAULT_SCENE
+from disaster_env import DEFAULT_BALANCE_ASSIST_SCALE, DEFAULT_SCENE, generate_random_terrain
 from export_run import list_runs, load_run_manifest, manifest_to_frontend
 from run_store import current_run_id, append_live_eval, run_dir, read_json, load_episode
 from episode_loader import replay_episode_actions
-from disaster_env import DEFAULT_SCENE
 from gemini_client import SURVIVORS, get_gemini_target
 from rescue_runner import run_episode
 from scenes import GENERATED_SCENES, get_scene
+from scenario_agent import (
+    Difficulty,
+    ScenarioAgent,
+    SceneSpec,
+    build_generation_prompt,
+    normalize_survivor_profiles,
+)
+from scene_adapter import scene_spec_to_env_scene
 
 _HERE = Path(__file__).resolve().parent
 _STATIC = _HERE / "static"
@@ -210,18 +221,59 @@ class TrainRequest(BaseModel):
     total_steps: int | None = None
 
 
+class GeneratePromptRequest(BaseModel):
+    difficulty: Difficulty = "medium"
+    survivor_count: int = 2
+    theme: str | None = None
+
+
+class GenerateSceneRequest(BaseModel):
+    description: str
+    difficulty: Difficulty = "medium"
+    survivor_count: int = 2
+    skip_episode: bool = False
+    max_steps: int | None = None
+
+
 def _scene_summary(idx: int, scene: dict) -> dict:
+    difficulty = scene.get("difficulty", "medium")
     return {
         "index": idx,
         "name": scene["name"],
-        "difficulty": scene.get("difficulty", "medium"),
+        "difficulty": difficulty,
         "robot_start": scene.get("robot_start"),
         "survivor_pos": scene.get("survivor_pos"),
         "survivor": scene.get("survivor", {}),
         "obstacle_count": len(scene.get("obstacles", [])),
         "hazard_count": len(scene.get("hazards", [])),
-        "obstacles": scene.get("obstacles", []),
-        "hazards": scene.get("hazards", []),
+        "obstacles": [_decorate_obstacle(obstacle, i) for i, obstacle in enumerate(scene.get("obstacles", []))],
+        "hazards": [_decorate_hazard(hazard, i) for i, hazard in enumerate(scene.get("hazards", []))],
+        "terrain": scene.get("terrain") or generate_random_terrain(
+            seed=idx + 1000,
+            difficulty=difficulty,
+            grid_size=10,
+        ),
+    }
+
+
+def _decorate_obstacle(obstacle: dict, index: int) -> dict:
+    colors = ["#8e9294", "#5f6870", "#7b6f61", "#a89f93", "#6d6258"]
+    return {**obstacle, "color": obstacle.get("color", colors[index % len(colors)])}
+
+
+def _decorate_hazard(hazard: dict, index: int) -> dict:
+    hazard_type = hazard.get("type")
+    colors = {
+        "fire": "#ef3b2d",
+        "gas": "#2fbf71",
+        "flood": "#2f80ed",
+        "unstable_floor": "#f2b705",
+    }
+    fallback = ["#ef3b2d", "#2fbf71", "#f2b705"]
+    return {
+        **hazard,
+        "type": hazard_type or ("fire" if index % 2 == 0 else "gas"),
+        "color": hazard.get("color", colors.get(hazard_type, fallback[index % len(fallback)])),
     }
 
 
@@ -241,6 +293,7 @@ def _run_scene(idx: int, max_steps: int, cancel_event: threading.Event) -> dict:
         max_steps=max_steps,
         assist_scale=ASSIST_SCALE,
         balance_assist_scale=BALANCE_ASSIST_SCALE,
+        cancel_event=cancel_event,
     )
     return {
         "scene_index": idx,
@@ -289,7 +342,69 @@ def _run_episode_for(target_id: str, cancel_event: threading.Event) -> dict:
         max_steps=MAX_STEPS,
         assist_scale=ASSIST_SCALE,
         balance_assist_scale=BALANCE_ASSIST_SCALE,
+        cancel_event=cancel_event,
     )
+
+
+def _score_generated_scene(scene: SceneSpec, env_scene: dict) -> dict:
+    issues: list[str] = []
+    score = 100
+
+    if not scene.survivors:
+        issues.append("scene has no survivors")
+        score -= 35
+    if not scene.assets:
+        issues.append("scene has no solid assets")
+        score -= 25
+    if not scene.hazards:
+        issues.append("scene has no hazards")
+        score -= 10
+    if not env_scene.get("obstacles"):
+        issues.append("converted environment has no obstacles")
+        score -= 20
+    if not env_scene.get("survivor_pos"):
+        issues.append("converted environment has no active survivor target")
+        score -= 30
+
+    bounds = scene.bounds
+    for survivor in scene.survivors:
+        x, y, z = survivor.position
+        if not (0 <= x <= bounds[0] and 0 <= y <= bounds[1] and z == 0):
+            issues.append(f"survivor {survivor.profile.name} is outside navigable bounds")
+            score -= 10
+            break
+
+    score = max(0, min(100, score))
+    return {
+        "score": score,
+        "passed": score >= 60,
+        "issues": issues,
+        "feedback": (
+            "Scene is valid for conversion and robot rollout."
+            if score >= 60
+            else "Scene needs repair before it is suitable for rollout."
+        ),
+    }
+
+
+def _episode_response(result: dict, gif_url: str, max_steps: int) -> dict:
+    return {
+        "reached": bool(result.get("reached", False)),
+        "fallen": bool(result.get("fallen", False)),
+        "steps": int(result.get("steps", 0)),
+        "total_reward": float(result.get("total_reward", 0.0)),
+        "final_dist": result.get("final_dist"),
+        "min_dist": result.get("min_dist"),
+        "obstacle_contacts": result.get("obstacle_contacts", 0),
+        "hazard_steps": result.get("hazard_steps", 0),
+        "mean_stance_slip": result.get("mean_stance_slip", 0.0),
+        "mean_assist_force": result.get("mean_assist_force", 0.0),
+        "gait_score": result.get("gait_score", 0.0),
+        "gif_url": gif_url,
+        "trajectory": result.get("trajectory", []),
+        "detection_event": result.get("detection_event"),
+        "max_steps": max_steps,
+    }
 
 
 def create_app() -> FastAPI:
@@ -447,6 +562,84 @@ def create_app() -> FastAPI:
     def cancel_train() -> dict:
         return {"stopped": _stop_training()}
 
+    @app.post("/generate-prompt")
+    def generate_prompt(req: GeneratePromptRequest) -> dict:
+        survivor_count = max(1, min(6, int(req.survivor_count)))
+        theme = (req.theme or "urban collapse").strip() or "urban collapse"
+        profiles = normalize_survivor_profiles(survivor_count, None)
+        prompt = (
+            f"{theme}. Generate a {req.difficulty} disaster rescue scene with "
+            f"{survivor_count} survivor{'s' if survivor_count != 1 else ''}. "
+            "Include dense rubble, hazards, a reachable robot start, and clear "
+            "priority differences between survivors."
+        )
+        return {
+            "prompt": prompt,
+            "agent_prompt": build_generation_prompt(
+                prompt,
+                survivor_count,
+                profiles,
+                req.difficulty,
+            ),
+        }
+
+    @app.post("/generate-scene")
+    async def generate_scene(req: GenerateSceneRequest) -> dict:
+        description = req.description.strip()
+        if not description:
+            raise HTTPException(status_code=400, detail="description is required")
+
+        survivor_count = max(1, min(6, int(req.survivor_count)))
+        max_steps = req.max_steps or MAX_STEPS
+
+        try:
+            scene = await asyncio.to_thread(
+                ScenarioAgent().generate_scene,
+                description,
+                survivor_count,
+                None,
+                req.difficulty,
+            )
+            env_scene = scene_spec_to_env_scene(scene)
+            env_scene["name"] = f"generated_{int(time.time())}"
+            eval_result = _score_generated_scene(scene, env_scene)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+        episode = None
+        episode_error = None
+        if eval_result["passed"] and not req.skip_episode:
+            gif_name = f"generated_{int(time.time() * 1000)}.gif"
+            gif_path = _OUTPUT / gif_name
+            key = f"generate:{gif_name}"
+            cancel_event = _register_cancel(key)
+            try:
+                result = await asyncio.to_thread(
+                    run_episode,
+                    scene=env_scene,
+                    model_path=MODEL_PATH,
+                    gif_path=str(gif_path),
+                    max_steps=max_steps,
+                    assist_scale=ASSIST_SCALE,
+                    balance_assist_scale=BALANCE_ASSIST_SCALE,
+                    cancel_event=cancel_event,
+                )
+                episode = _episode_response(result, f"/gifs/{gif_name}", max_steps)
+            except FileNotFoundError as e:
+                episode_error = f"model not found: {e}"
+            except Exception as e:
+                episode_error = str(e)
+            finally:
+                _release_cancel(key, cancel_event)
+
+        return {
+            "scene": scene.model_dump(),
+            "env_scene": env_scene,
+            "eval": eval_result,
+            "episode": episode,
+            "episode_error": episode_error,
+        }
+
     @app.post("/scene/{idx}/run")
     async def run_scene(idx: int, req: SceneRunRequest) -> dict:
         if idx < 0 or idx >= len(GENERATED_SCENES):
@@ -467,7 +660,7 @@ def create_app() -> FastAPI:
 
     @app.post("/command")
     async def command(req: CommandRequest) -> dict:
-        decision = get_gemini_target(req.text, SURVIVORS)
+        decision = await asyncio.to_thread(get_gemini_target, req.text, SURVIVORS)
         target_id = decision["target_id"]
 
         key = f"command:{target_id}"

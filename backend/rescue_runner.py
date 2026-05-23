@@ -42,6 +42,8 @@ def run_episode(
     curriculum_stage: str = "natural_target",
     assist_scale: float = 0.95,
     balance_assist_scale: float = DEFAULT_BALANCE_ASSIST_SCALE,
+    cancel_event: threading.Event | None = None,
+    record_rollout: bool = False,
 ) -> dict:
     """
     Run one episode of the trained policy in the given scene.
@@ -82,6 +84,8 @@ def run_episode(
     min_dist = None
     final_heading_error = None
     final_info = {}
+    cancelled = False
+    detection_event = None
 
     for _ in range(max_steps):
         if cancel_event is not None and cancel_event.is_set():
@@ -121,7 +125,7 @@ def run_episode(
         if info.get("survivor_detected") and detection_event is None:
             detection_event = {
                 "step": len(trajectory),
-                "robot_pos": robot_pos,
+                "robot_pos": trajectory[-1],
                 "signal": info.get("detection_signal"),
                 "radius": info.get("detection_radius"),
             }
@@ -162,6 +166,8 @@ def run_episode(
         "gait_score": round(float(final_info.get("gait_score", 0.0)), 3),
         "assist_scale": round(float(final_info.get("assist_scale", assist_scale)), 3),
         "balance_assist_scale": round(float(final_info.get("balance_assist_scale", balance_assist_scale)), 3),
+        "detection_event": detection_event,
+        "cancelled": cancelled,
     }
     if record_rollout:
         result["rollout"] = rollout
