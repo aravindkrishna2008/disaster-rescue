@@ -313,6 +313,12 @@ export default function MissionControlPage() {
     };
   }, [train.status]);
 
+  useEffect(() => {
+    if (train.status === 'done') {
+      fetch('/runs').catch(() => {});
+    }
+  }, [train.status]);
+
   const killAll = useCallback(async () => {
     if (killing) return;
     killedRef.current = true;

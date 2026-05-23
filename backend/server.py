@@ -30,6 +30,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from export_run import list_runs, load_run_manifest, manifest_to_frontend
+from run_store import current_run_id, append_live_eval, run_dir, read_json, load_episode
+from episode_loader import replay_episode_actions
 from disaster_env import DEFAULT_SCENE
 from gemini_client import SURVIVORS, get_gemini_target
 from rescue_runner import run_episode
@@ -321,6 +323,71 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"run {run_id!r} not found")
         return manifest_to_frontend(manifest)
 
+    @app.get("/runs/{run_id}/eval_live")
+    def get_run_eval_live(run_id: str) -> dict:
+        eval_live_path = run_dir(run_id) / "eval_live.json"
+        if not eval_live_path.exists():
+            raise HTTPException(status_code=404, detail=f"eval_live.json not found for run {run_id!r}")
+        try:
+            return read_json(eval_live_path)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/runs/{run_id}/episodes")
+    def get_run_episodes(run_id: str) -> dict:
+        eval_path = run_dir(run_id) / "eval.json"
+        if not eval_path.exists():
+            raise HTTPException(status_code=404, detail=f"eval.json not found for run {run_id!r}")
+        try:
+            eval_data = read_json(eval_path)
+            return {
+                "episodes": eval_data.get("scenes", []),
+                "summary": {
+                    "success_count": eval_data.get("success_count"),
+                    "scene_count": eval_data.get("scene_count"),
+                    "mean_reward": eval_data.get("mean_reward"),
+                }
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/runs/{run_id}/episodes/{scene_name}")
+    def get_run_episode_detail(run_id: str, scene_name: str) -> dict:
+        ep = load_episode(run_id, scene_name)
+        if ep is None:
+            raise HTTPException(
+                status_code=404, detail=f"episode {scene_name!r} not found for run {run_id!r}"
+            )
+        return ep
+
+    @app.post("/runs/{run_id}/episodes/{scene_name}/replay")
+    def replay_episode(run_id: str, scene_name: str) -> dict:
+        ep_dir = run_dir(run_id) / "episodes"
+        if not ep_dir.exists():
+            raise HTTPException(status_code=404, detail=f"episodes folder not found for run {run_id!r}")
+        
+        target_file = None
+        for f in ep_dir.glob("*.json"):
+            if f.stem == scene_name or f.stem.endswith(f"_{scene_name}"):
+                target_file = f
+                break
+        if not target_file:
+            raise HTTPException(
+                status_code=404, detail=f"episode {scene_name!r} not found for run {run_id!r}"
+            )
+
+        gif_filename = f"replay_{target_file.stem}.gif"
+        gif_path = run_dir(run_id) / gif_filename
+
+        try:
+            stats = replay_episode_actions(str(target_file), gif_path=str(gif_path))
+            stats["gif_url"] = f"/run-gifs/{run_id}/{gif_filename}"
+            return stats
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.get("/scenes")
     def list_scenes() -> dict:
         scenes = [_scene_summary(i, scene) for i, scene in enumerate(GENERATED_SCENES)]
@@ -367,6 +434,8 @@ def create_app() -> FastAPI:
         cancel_event = _register_cancel(key)
         try:
             result = await asyncio.to_thread(_run_scene, idx, max_steps, cancel_event)
+            if not result.get("cancelled"):
+                append_live_eval(current_run_id(), result)
             return result
         except FileNotFoundError as e:
             raise HTTPException(status_code=500, detail=f"model not found: {e}") from e

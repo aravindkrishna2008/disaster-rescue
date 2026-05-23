@@ -21,12 +21,18 @@ from rich.table import Table
 from disaster_env import DisasterEnv
 from rescue_runner import run_generated_scene_suite
 from scenes import GENERATED_SCENES
+from run_store import (
+    RUNS_DIR,
+    MODELS_DIR,
+    TB_LOGS_DIR,
+    run_dir,
+    read_json,
+    write_json,
+    probe_current_obs_dim,
+)
 
 console = Console()
 _HERE = Path(__file__).resolve().parent
-RUNS_DIR = _HERE / "runs"
-MODELS_DIR = _HERE / "models"
-TB_LOGS_DIR = _HERE / "tb_logs"
 
 
 def _git_commit() -> str | None:
@@ -132,6 +138,11 @@ def export_run(
     tb_log_dir: Path | None = None,
     total_steps: int = 500_000,
     n_envs: int | None = None,
+    no_rollout: bool = False,
+    reached_only: bool = False,
+    init_from: str | None = None,
+    bc_transitions: int | None = None,
+    bc_epochs: int | None = None,
 ) -> Path:
     model_path = Path(model_path)
     if model_path.suffix == ".zip":
@@ -141,9 +152,9 @@ def export_run(
 
     stem = model_path.name
     run_name = run_name or stem
-    run_dir = RUNS_DIR / run_name
-    episodes_dir = run_dir / "episodes"
-    gifs_dir = run_dir / "gifs"
+    r_dir = run_dir(run_name)
+    episodes_dir = r_dir / "episodes"
+    gifs_dir = r_dir / "gifs"
     episodes_dir.mkdir(parents=True, exist_ok=True)
     gifs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -152,9 +163,7 @@ def export_run(
     curve = extract_reward_curve(tb_log_dir)
 
     # Probe obs dim from env
-    probe_env = DisasterEnv(scene=GENERATED_SCENES[0], render_mode="rgb_array")
-    obs_dim = int(probe_env.observation_space.shape[0])
-    probe_env.close()
+    obs_dim = probe_current_obs_dim()
 
     console.print(f"[bold cyan]Evaluating[/] {stem} across {len(GENERATED_SCENES)} scenes…")
     suite_results = run_generated_scene_suite(
@@ -170,6 +179,7 @@ def export_run(
         name = r["scene_name"]
         ep_file = f"{idx + 1:02d}_{name}.json"
         gif_name = f"{idx + 1:02d}_{name}.gif"
+        
         ep_payload = {
             "scene_index": idx,
             "scene_name": name,
@@ -181,9 +191,12 @@ def export_run(
             "gif": f"gifs/{gif_name}",
             "model": stem,
         }
-        if r.get("rollout"):
+        if not no_rollout and r.get("rollout"):
             ep_payload["rollout"] = r["rollout"]
-        (episodes_dir / ep_file).write_text(json.dumps(ep_payload, indent=2))
+
+        has_ep_file = not (reached_only and not r["reached"])
+        if has_ep_file:
+            (episodes_dir / ep_file).write_text(json.dumps(ep_payload, indent=2))
 
         episode_exports.append(
             {
@@ -193,7 +206,7 @@ def export_run(
                 "steps": r["steps"],
                 "total_reward": r["total_reward"],
                 "detection_event": r.get("detection_event") is not None,
-                "episode_file": f"episodes/{ep_file}",
+                "episode_file": f"episodes/{ep_file}" if has_ep_file else None,
                 "gif": f"gifs/{gif_name}",
             }
         )
@@ -241,6 +254,12 @@ def export_run(
         "exported_at": exported_at,
         "checkpoints": _checkpoints_for_run(stem),
     }
+    if init_from is not None:
+        summary["init_from"] = init_from
+    if bc_transitions is not None:
+        summary["bc_transitions"] = bc_transitions
+    if bc_epochs is not None:
+        summary["bc_epochs"] = bc_epochs
 
     y_values = [p["reward"] for p in curve] if curve else [-250, 50]
     y_min = min(y_values) - 20
@@ -266,10 +285,10 @@ def export_run(
         "advanced_stats": _build_advanced_stats(summary, eval_data),
     }
 
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    (run_dir / "curve.json").write_text(json.dumps(curve, indent=2))
-    (run_dir / "eval.json").write_text(json.dumps(eval_data, indent=2))
-    (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    write_json(r_dir / "summary.json", summary)
+    write_json(r_dir / "curve.json", curve)
+    write_json(r_dir / "eval.json", eval_data)
+    write_json(r_dir / "manifest.json", manifest)
 
     table = Table(title=f"Exported → runs/{run_name}/")
     table.add_column("Scene")
@@ -288,7 +307,7 @@ def export_run(
         f"[bold green]✓[/] {success_count}/{len(suite_results)} scenes · "
         f"{len(curve)} curve points · runs/{run_name}/"
     )
-    return run_dir
+    return r_dir
 
 
 def list_runs() -> list[dict]:
@@ -300,12 +319,12 @@ def list_runs() -> list[dict]:
             continue
         manifest_path = d / "manifest.json"
         if manifest_path.exists():
-            m = json.loads(manifest_path.read_text())
+            m = read_json(manifest_path)
         else:
             summary_path = d / "summary.json"
             if not summary_path.exists():
                 continue
-            m = json.loads(summary_path.read_text())
+            m = read_json(summary_path)
         runs.append(
             {
                 "id": m.get("id", d.name),
@@ -321,16 +340,26 @@ def list_runs() -> list[dict]:
 
 
 def load_run_manifest(run_id: str) -> dict | None:
-    run_dir = RUNS_DIR / run_id
-    manifest_path = run_dir / "manifest.json"
+    manifest_path = run_dir(run_id) / "manifest.json"
     if not manifest_path.exists():
         return None
-    return json.loads(manifest_path.read_text())
+    return read_json(manifest_path)
 
 
 def manifest_to_frontend(m: dict) -> dict:
     """Shape expected by TrainingRuns.tsx."""
-    return {
+    eval_live_path = run_dir(m["id"]) / "eval_live.json"
+    eval_live_data = None
+    if eval_live_path.exists():
+        try:
+            el = read_json(eval_live_path)
+            sessions = el.get("sessions", [])
+            if sessions:
+                eval_live_data = sessions[-1]
+        except Exception:
+            pass
+
+    res = {
         "id": m["id"],
         "name": m["name"],
         "subtitle": m.get("subtitle", ""),
@@ -347,6 +376,9 @@ def manifest_to_frontend(m: dict) -> dict:
         "exportedAt": m.get("exported_at"),
         "source": "runs",
     }
+    if eval_live_data is not None:
+        res["evalLive"] = eval_live_data
+    return res
 
 
 def main():
@@ -356,6 +388,8 @@ def main():
     parser.add_argument("--max-steps", type=int, default=300)
     parser.add_argument("--total-steps", type=int, default=500_000)
     parser.add_argument("--tb-log", default=None, help="TensorBoard log dir (default: latest PPO_*)")
+    parser.add_argument("--no-rollout", action="store_true", help="skip obs/action arrays (smaller files)")
+    parser.add_argument("--reached-only", action="store_true", help="only write episodes where reached: true")
     args = parser.parse_args()
 
     tb = Path(args.tb_log) if args.tb_log else None
@@ -365,6 +399,8 @@ def main():
         max_steps=args.max_steps,
         tb_log_dir=tb,
         total_steps=args.total_steps,
+        no_rollout=args.no_rollout,
+        reached_only=args.reached_only,
     )
 
 
