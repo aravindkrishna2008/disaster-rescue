@@ -374,6 +374,7 @@ def manifest_to_frontend(m: dict) -> dict:
         "advancedStats": m.get("advanced_stats", []),
         "eval": m.get("eval"),
         "exportedAt": m.get("exported_at"),
+        "git_commit": m.get("git_commit"),
         "source": "runs",
     }
     if eval_live_data is not None:
