@@ -374,9 +374,9 @@ export default function MissionControlPage() {
         </div>
       </header>
 
-      <header className="mc-topbar" style={{ paddingTop: '20px', borderBottom: '1px solid var(--rule)' }}>
+      <header className="mc-topbar">
         <div>
-          <h1 className="mc-title" style={{ fontSize: '22px' }}>
+          <h1 className="mc-title">
             Mission Control <span>— Multi-Environment Rollout Suite</span>
           </h1>
         </div>
