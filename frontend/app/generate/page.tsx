@@ -163,7 +163,7 @@ export default function GeneratePage() {
               className="btn-secondary"
               style={{ opacity: promptLoading ? 0.5 : 1, whiteSpace: 'nowrap' }}
             >
-              {promptLoading ? 'Asking Gemini…' : '✦ Generate with Gemini'}
+              {promptLoading ? 'Asking Gemini…' : 'Generate with Gemini'}
             </button>
           </div>
 

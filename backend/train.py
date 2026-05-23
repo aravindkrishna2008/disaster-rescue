@@ -19,6 +19,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecMonitor
 
 from disaster_env import DEFAULT_BALANCE_ASSIST_SCALE, DisasterEnv
+from export_run import export_run
 from scenes import GENERATED_SCENES, get_scene
 
 console = Console()
@@ -87,7 +88,14 @@ def parse_curriculum_steps(raw: str, expected_count: int) -> tuple[int, ...]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the G1 locomotion PPO policy.")
-    parser.add_argument("--timesteps", type=int, default=DEFAULT_TOTAL_STEPS)
+    env_steps = os.environ.get("BATTLE_ANGEL_TRAIN_STEPS")
+    default_timesteps = DEFAULT_TOTAL_STEPS
+    if env_steps is not None:
+        try:
+            default_timesteps = int(env_steps)
+        except ValueError:
+            pass
+    parser.add_argument("--timesteps", type=int, default=default_timesteps)
     parser.add_argument("--n-envs", type=int, default=len(GENERATED_SCENES))
     parser.add_argument("--model-name", default=None)
     parser.add_argument("--checkpoint-freq", type=int, default=DEFAULT_CHECKPOINT_FREQ)
@@ -241,6 +249,7 @@ def main():
                 balance_assist_scale=balance_assist_scale,
             )
         final_source = warm_start_path
+        total_steps = sum(timesteps for _, timesteps, _, _ in curriculum)
     else:
         assist_scale = 0.0 if args.no_assist else (1.0 if args.assist_scale is None else args.assist_scale)
         balance_assist_scale = (
@@ -258,6 +267,7 @@ def main():
             assist_scale=assist_scale,
             balance_assist_scale=balance_assist_scale,
         )
+        total_steps = args.timesteps
 
     final_path = Path(MODELS_DIR) / f"{args.model_name}_final"
     PPO.load(final_source, device="cpu").save(final_path)
@@ -280,9 +290,9 @@ def main():
     console.print("[bold cyan]Exporting run manifest to runs/…[/]")
     export_run(
         final_path,
-        run_name=f"{MODEL_NAME}_final",
-        total_steps=TOTAL_STEPS,
-        n_envs=N_ENVS,
+        run_name=f"{args.model_name}_final",
+        total_steps=total_steps,
+        n_envs=n_envs,
     )
 
 

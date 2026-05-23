@@ -14,13 +14,6 @@ build/
 venv/
 env/
 
-# ML artifacts
-models/
-tb_logs/
-output/
-tmp/
-runs/**/gifs/
-
 # Environment & secrets
 .env
 .env.*
@@ -41,3 +34,35 @@ runs/**/gifs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Next.js build output
+frontend/.next/
+
+# ---------------------------------------------------------------------------
+# ML / PPO artifacts (regenerate with train.py + export_run.py)
+# ---------------------------------------------------------------------------
+
+# TensorBoard logs
+tb_logs/
+backend/tb_logs/
+
+# Mission-control episode GIFs (live Run output)
+output/
+backend/output/
+tmp/
+
+# PPO checkpoints — ignore all model zips except committed fallbacks below
+backend/models/*
+/models/
+!backend/models/.gitkeep
+!backend/models/ppo_model_final.zip
+!backend/models/g1_locomotion_natural_final.zip
+
+# Intermediate checkpoint saves from PPO.learn()
+**/*_checkpoint_*.zip
+
+# Exported runs — ignore everything except the canonical demo export
+backend/runs/*
+!backend/runs/ppo_buried_detection_final/
+!backend/runs/ppo_buried_detection_final/**
+backend/runs/**/eval_live.json

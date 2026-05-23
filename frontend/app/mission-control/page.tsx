@@ -373,9 +373,7 @@ export default function MissionControlPage() {
 
       <header className="mc-topbar">
         <div>
-          <h1 className="mc-title">
-            Training Gym <span>— Eight-Environment PPO Curriculum</span>
-          </h1>
+          <h1 className="mc-title">Training Gym</h1>
           <p className="mc-purpose">
             Train the navigation policy in simulation, then run any gym environment to inspect its animated
             rollout and readiness telemetry before moving into generated scenes.

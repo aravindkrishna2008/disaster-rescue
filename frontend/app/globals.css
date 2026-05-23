@@ -363,17 +363,19 @@ body::before{
   letter-spacing: .14em;
 }
 .btn-primary {
+  font: inherit;
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
   background: var(--red);
   color: var(--red-ink);
   padding: 12px 28px;
-  font-size: 14px;
-  font-weight: 600;
   text-decoration: none;
-  letter-spacing: .08em;
-  text-transform: uppercase;
   border: 1px solid var(--red);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s, border-color 0.15s;
 }
 .btn-primary:hover {
   background: var(--ink);
@@ -400,20 +402,23 @@ body::before{
   cursor: not-allowed;
 }
 .btn-secondary {
+  font: inherit;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
   background: transparent;
   color: var(--ink);
-  padding: 12px 28px;
-  font-size: 14px;
-  font-weight: 600;
+  padding: 10px 22px;
   text-decoration: none;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--ink-mid);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .btn-secondary:hover {
-  background: rgba(20,17,14,0.06);
+  background: var(--bg-2);
+  border-color: var(--ink);
 }
 
 .landing-section {
