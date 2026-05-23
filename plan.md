@@ -301,18 +301,116 @@ pip install 'stable-baselines3==2.3.2'  # Use this version
 
 ---
 
+## 👥 Team Roles (3 People)
+
+For a team of **3 people with 1 frontend person**, use this split:
+
+| Person | Role | Owns |
+|--------|------|------|
+| **Person A (Frontend)** | UI / demo experience | `frontend/` — HTML, CSS, JS, trajectory viz, loading/errors, demo buttons |
+| **Person B (RL)** | RL + simulation | `disaster_env.py`, `train.py`, `eval.py`, model, **`run_episode()`** function |
+| **Person C (Agents/Backend)** | Agents + API integration | `scenario_agent.py`, `debrief_agent.py`, `mock_gemini.py`, **`app.py`**, video, submit |
+
+**Person C is backend lead AND integration/demo lead.** Person B stays on physics + policy so training runs in background.
+
+### How Work Flows (Kitchen Analogy)
+
+- **Frontend** = dining room (what judges see)
+- **Person C** = waiter + head chef (API + Gemini)
+- **Person B** = specialist cook (robot actually moves)
+
+Person B exposes one function Person C calls:
+
+```python
+# rescue_runner.py (Person B owns this)
+def run_episode(scene: dict, model_path: str = "./models/ppo_model_final") -> dict:
+    """Returns { trajectory: [[x,y],...], reached: bool, steps: int }"""
+```
+
+Person C's `/rescue` route:
+
+```
+disaster text → Gemini scene → run_episode() → Gemini debrief → JSON back to frontend
+```
+
+Frontend only ever calls `fetch('/rescue', ...)`.
+
+### API Contract (Agree by 10:30)
+
+Lock this interface so you can build in parallel:
+
+```json
+POST /rescue
+{ "disaster_description": "A 7.5 magnitude earthquake..." }
+
+→ {
+  "scene": { 
+    "robot_start": [x, y],
+    "survivor_pos": [x, y],
+    "obstacles": [{pos: [x,y], size: [w,h]}, ...],
+    "hazards": [{center: [x,y], radius: r}, ...],
+    "difficulty": "easy|medium|hard"
+  },
+  "trajectory": [[x, y], [x, y], ...],
+  "reached": false,
+  "steps": 150,
+  "debrief": "The robot navigated through..."
+}
+```
+
+**Person C ships a mock `/rescue`** that returns fixed JSON by 11:00 AM. Frontend wires the real API at 1:00 PM.
+
+### Hour-by-Hour Breakdown
+
+| Time | Frontend (Person A) | Person B (RL) | Person C (Agents/API) |
+|------|-------------------|---------------|------------------------|
+| **10:00** | UI against `mocks/rescue_response.json` | Verify pre-trained model, `eval.py` | Get API key, stub `app.py` + mock `/rescue` |
+| **10:30** | Input form + loading spinner | Finish `DisasterEnv` tweaks if needed | Ship `scenario_agent.py`, test real Gemini |
+| **11:00** | Trajectory map + debrief panel | **Start 200k training**, build `run_episode()` | `debrief_agent.py`, wire mock `/rescue` |
+| **12:00** | CSS + error handling (empty input, long text) | Monitor training, **don't stop it** | Serve frontend static files from FastAPI |
+| **1:00 PM** | Switch from mock → real `/rescue` API | Glance at training logs | Integration test full pipeline |
+| **2:00 PM** | Polish UI only | Fix RL bugs if rescue looks wrong | Error handling + fallbacks |
+| **3:00–4:00 PM** | Demo buttons + rehearsal | Training should finish or fallback to pre-trained | **Loom video + GitHub push + submit** |
+| **4:30 PM** | ❌ Stop new features | ❌ Stop new features | ✅ Submit form |
+
+### What You Should NOT Do
+
+- **Frontend:** Don't build `app.py` or import MuJoCo/PPO/Gemini
+- **Frontend:** Don't wait for backend before 11 AM — use mock JSON
+- **Frontend:** Don't own integration testing at 1 PM — Person C runs that; you confirm the UI works
+- **Person B:** Don't merge training changes after 1:30 PM — use pre-trained if slow
+- **Person C:** Don't rebuild the UI — use what Frontend ships
+
+### Emergency Fallbacks
+
+| Problem | Who Handles | Backup |
+|---------|-------------|--------|
+| Training too slow | **Person B** — stop at 1:30 PM | Use `./models/ppo_model_final.zip` |
+| Gemini API down | **Person C** — activate `mock_gemini.py` | Demo still works with hardcoded scenes |
+| MuJoCo viewer broken | **Person B** — headless run | **Person A** shows trajectory on canvas |
+| Demo crashes last-minute | **Person C** runs `python eval.py` | **Person A** keeps UI responsive |
+
+---
+
 ## ⏰ Timeline
 
 ### 10:00 AM — Arrive, Setup
 
+**All:** 
 - [ ] Everyone activates `conda activate disaster`
 - [ ] Pull latest code: `git pull origin main`
+
+**Person B:**
 - [ ] Verify pre-trained model exists: `ls -la models/ppo_model_final.zip`
 - [ ] Quick test: `python eval.py` (should run in <1 min with no render)
 
+**Person A (Frontend):**
+- [ ] Verify `mocks/rescue_response.json` exists and has valid structure
+- [ ] Open dev tools, test mock fetch locally
+
 ### 10:30 AM — Get API Keys & Integrate Gemini
 
-**Who:** Agent Lead  
+**Person C (Agents/Backend):**  
 **Duration:** 30 min
 
 - [ ] Get Google Cloud API key from hackathon organizers
@@ -360,15 +458,50 @@ Return ONLY valid JSON, no other text.
 
 ### 11:00 AM — Start Training, Parallel Work Begins
 
-**Who:** RL Lead starts training; Agents + Frontend teams work in parallel
+**THREE PARALLEL TRACKS:**
 
-**RL Lead:**
+---
+
+**Person B (RL Training):**
 ```bash
-# Start 200k step training (runs for ~45 min)
+# Start 200k step training (runs for ~45 min in background)
 python train.py  # (modify to 200k steps instead of 50k)
+# Monitor but DON'T STOP unless at 1:30 PM it's not done
 ```
 
-**Agent Team:**
+Also build `rescue_runner.py`:
+```python
+# rescue_runner.py
+def run_episode(scene: dict, model_path: str = "./models/ppo_model_final") -> dict:
+    """Run one episode with given scene config."""
+    from disaster_env import DisasterEnv
+    from stable_baselines3 import PPO
+    
+    env = DisasterEnv()
+    obs, _ = env.reset()
+    
+    trajectory = []
+    model = PPO.load(model_path)
+    
+    for step in range(500):
+        action, _ = model.predict(obs, deterministic=True)
+        obs, reward, terminated, truncated, info = env.step(action)
+        trajectory.append(list(obs[:2]))
+        
+        if terminated or truncated:
+            break
+    
+    env.close()
+    return {
+        "trajectory": trajectory,
+        "reached": info.get("reached", False),
+        "steps": len(trajectory)
+    }
+```
+
+---
+
+**Person C (Agents/Backend):**
 Build `debrief_agent.py`:
 
 ```python
@@ -407,186 +540,482 @@ Keep it conversational and highlight any challenges overcome.
     return response.text
 ```
 
-**Frontend Team:**
-Start building `app.py`:
+Then build `app.py` to wire everything:
 
 ```python
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from scenario_agent import get_scene_from_gemini
 from debrief_agent import analyze_trajectory
-from disaster_env import DisasterEnv
-from stable_baselines3 import PPO
+from rescue_runner import run_episode
 import json
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
-# Load trained model
+# Load trained model path (Person B updates this)
+MODEL_PATH = "./models/ppo_model_final"
+
 try:
-    model = PPO.load("./models/ppo_model_final")
+    from stable_baselines3 import PPO
+    PPO.load(MODEL_PATH)
+    print("✓ Model loaded")
 except:
-    print("⚠️  Model not found, will use random policy")
-    model = None
+    print("⚠️ Model not found, will fallback at runtime")
 
 @app.get("/")
 async def root():
-    return HTMLResponse("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Disaster Rescue</title>
-        <style>
-            body { font-family: Arial; max-width: 800px; margin: 0 auto; padding: 20px; }
-            input { width: 100%; padding: 10px; font-size: 16px; }
-            button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
-            #result { margin-top: 20px; padding: 15px; background: #f0f0f0; border-radius: 5px; }
-            pre { background: #fff; padding: 10px; overflow-x: auto; }
-        </style>
-    </head>
-    <body>
-        <h1>🤖 Disaster Rescue Robot</h1>
-        <input type="text" id="disaster" placeholder="Describe the disaster...">
-        <button onclick="rescue()">Launch Rescue</button>
-        <div id="result"></div>
-        
-        <script>
-            async function rescue() {
-                const disaster = document.getElementById('disaster').value;
-                const response = await fetch('/rescue', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({disaster_description: disaster})
-                });
-                const data = await response.json();
-                document.getElementById('result').innerHTML = `
-                    <h3>Scene Config</h3>
-                    <pre>${JSON.stringify(data.scene, null, 2)}</pre>
-                    <h3>Debrief</h3>
-                    <p>${data.debrief}</p>
-                `;
-            }
-        </script>
-    </body>
-    </html>
-    """)
+    with open("frontend/index.html") as f:
+        return HTMLResponse(f.read())
 
 @app.post("/rescue")
 async def rescue(request: dict):
     # Get scene from Gemini
     scene = get_scene_from_gemini(request["disaster_description"])
     
-    # Run episode
-    env = DisasterEnv()
-    obs, _ = env.reset()
-    
-    trajectory = []
-    for _ in range(500):
-        if model:
-            action, _ = model.predict(obs, deterministic=True)
-        else:
-            action = env.action_space.sample()
-        
-        obs, reward, terminated, truncated, info = env.step(action)
-        trajectory.append(list(obs[:2]))  # robot position
-        
-        if terminated or truncated:
-            break
-    
-    env.close()
+    # Run episode with Person B's function
+    result = run_episode(scene, MODEL_PATH)
     
     # Get debrief from Gemini
-    reached = info.get("reached", False)
-    debrief = analyze_trajectory(trajectory, len(trajectory), reached)
+    debrief = analyze_trajectory(
+        result["trajectory"],
+        result["steps"],
+        result["reached"]
+    )
     
     return {
         "scene": scene,
-        "trajectory_length": len(trajectory),
-        "reached": reached,
+        "trajectory": result["trajectory"],
+        "reached": result["reached"],
+        "steps": result["steps"],
         "debrief": debrief
     }
 ```
 
-- [ ] Get FastAPI running: `python -m uvicorn app:app --reload`
-- [ ] Test: Visit `http://localhost:8000`
+Test mock endpoint:
+```bash
+python -m uvicorn app:app --reload
+# Visit http://localhost:8000
+```
+
+---
+
+**Person A (Frontend):**
+Start building `frontend/index.html` with mock fetch:
+
+```html
+<!-- frontend/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Disaster Rescue Robot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 700px;
+            width: 100%;
+            padding: 40px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+        input {
+            flex: 1;
+            padding: 12px 16px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            padding: 12px 28px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover { background: #5568d3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .loading { display: none; text-align: center; margin: 20px 0; }
+        .spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .result { display: none; margin-top: 30px; }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        h3 { color: #333; margin-bottom: 10px; font-size: 1.2em; }
+        .scene-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 14px;
+        }
+        .scene-item {
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+        .scene-label { font-weight: 600; color: #667eea; }
+        .trajectory-canvas {
+            width: 100%;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+            margin-top: 10px;
+        }
+        .debrief { font-size: 15px; line-height: 1.6; color: #333; }
+        .stats { font-size: 14px; color: #666; margin-top: 10px; }
+        .error { color: #d32f2f; background: #ffebee; padding: 15px; border-radius: 8px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Disaster Rescue Robot</h1>
+        <p class="subtitle">Powered by Gemini + Reinforcement Learning</p>
+        
+        <div class="input-group">
+            <input type="text" id="disaster" placeholder="Describe the disaster scenario..."
+                   value="A 7.5 magnitude earthquake has devastated downtown...">
+            <button onclick="launchRescue()" id="rescueBtn">Launch Rescue</button>
+        </div>
+        
+        <div class="error" id="errorDiv"></div>
+        <div class="loading" id="loading"><div class="spinner"></div><p>Launching rescue mission...</p></div>
+        <div class="result" id="result">
+            <div class="section">
+                <h3>📍 Scene Configuration</h3>
+                <div class="scene-grid" id="sceneGrid"></div>
+            </div>
+            <div class="section">
+                <h3>🗺️ Robot Trajectory</h3>
+                <canvas id="trajectoryCanvas" class="trajectory-canvas" width="400" height="300"></canvas>
+            </div>
+            <div class="section">
+                <h3>📊 Mission Debrief</h3>
+                <p class="debrief" id="debrief"></p>
+                <div class="stats" id="stats"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function launchRescue() {
+            const disaster = document.getElementById('disaster').value.trim();
+            if (!disaster) {
+                showError('Please describe a disaster scenario.');
+                return;
+            }
+            
+            document.getElementById('rescueBtn').disabled = true;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('errorDiv').style.display = 'none';
+            
+            try {
+                const response = await fetch('/rescue', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({disaster_description: disaster})
+                });
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                
+                displayResult(data);
+            } catch (err) {
+                showError(`Error: ${err.message}`);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('rescueBtn').disabled = false;
+            }
+        }
+        
+        function displayResult(data) {
+            // Scene config
+            const sceneHtml = `
+                <div class="scene-item">
+                    <div class="scene-label">Start</div>
+                    [${data.scene.robot_start.map(x => x.toFixed(1)).join(', ')}]
+                </div>
+                <div class="scene-item">
+                    <div class="scene-label">Survivor</div>
+                    [${data.scene.survivor_pos.map(x => x.toFixed(1)).join(', ')}]
+                </div>
+                <div class="scene-item">
+                    <div class="scene-label">Difficulty</div>
+                    ${data.scene.difficulty}
+                </div>
+                <div class="scene-item">
+                    <div class="scene-label">Obstacles</div>
+                    ${data.scene.obstacles?.length || 0}
+                </div>
+            `;
+            document.getElementById('sceneGrid').innerHTML = sceneHtml;
+            
+            // Trajectory canvas
+            drawTrajectory(data.trajectory, data.scene);
+            
+            // Debrief + stats
+            document.getElementById('debrief').textContent = data.debrief;
+            document.getElementById('stats').innerHTML = `
+                <strong>Steps:</strong> ${data.steps} | 
+                <strong>Survivor Reached:</strong> ${data.reached ? '✓ Yes' : '✗ No'}
+            `;
+            
+            document.getElementById('result').style.display = 'block';
+        }
+        
+        function drawTrajectory(trajectory, scene) {
+            const canvas = document.getElementById('trajectoryCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Clear and draw background
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw grid
+            ctx.strokeStyle = '#f0f0f0';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 10; i++) {
+                ctx.beginPath();
+                ctx.moveTo((canvas.width / 10) * i, 0);
+                ctx.lineTo((canvas.width / 10) * i, canvas.height);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, (canvas.height / 10) * i);
+                ctx.lineTo(canvas.width, (canvas.height / 10) * i);
+                ctx.stroke();
+            }
+            
+            if (!trajectory || trajectory.length === 0) return;
+            
+            const scale = 40; // pixels per unit
+            const offsetX = canvas.width / 2;
+            const offsetY = canvas.height / 2;
+            
+            // Draw trajectory line
+            ctx.strokeStyle = '#667eea';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            trajectory.forEach((pt, i) => {
+                const x = offsetX + pt[0] * scale;
+                const y = offsetY - pt[1] * scale;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            
+            // Draw start and end
+            const startX = offsetX + trajectory[0][0] * scale;
+            const startY = offsetY - trajectory[0][1] * scale;
+            const endX = offsetX + trajectory[trajectory.length-1][0] * scale;
+            const endY = offsetY - trajectory[trajectory.length-1][1] * scale;
+            
+            ctx.fillStyle = '#4caf50';
+            ctx.beginPath();
+            ctx.arc(startX, startY, 6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = '#ff9800';
+            ctx.beginPath();
+            ctx.arc(endX, endY, 6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Legend
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#666';
+            ctx.fillText('● Start', 10, canvas.height - 10);
+            ctx.fillStyle = '#ff9800';
+            ctx.fillText('● End', canvas.width - 80, canvas.height - 10);
+        }
+        
+        function showError(msg) {
+            document.getElementById('errorDiv').textContent = msg;
+            document.getElementById('errorDiv').style.display = 'block';
+        }
+        
+        // Allow Enter key to launch
+        document.getElementById('disaster').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') launchRescue();
+        });
+    </script>
+</body>
+</html>
+```
+
+Save to: `frontend/index.html`
+
+- [ ] Test with mock: Create `mocks/rescue_response.json` and test locally
+- [ ] Update fetch URL to `http://localhost:8000/rescue` once Person C ships the mock endpoint
 
 ### 12:00 PM — Lunch + Check Training
 
-- [ ] Training should be halfway done (100k steps)
-- [ ] Check TensorBoard: `tensorboard --logdir ./logs` (if available)
-- [ ] If training is fine, keep it running
-- [ ] If training is crashing, **use pre-trained model** and skip to step 13
+**Person B (RL):**
+- [ ] Training should be ~25% done (50k/200k)
+- [ ] Glance at logs — is it progressing or stuck?
+- [ ] If fine: **keep it running, don't touch it**
+- [ ] If slow: note the time, might need fallback at 1:30 PM
+
+**Person C (Agents/Backend):**
+- [ ] Wire mock `/rescue` endpoint so Person A can test real UI at 1:00 PM
+- [ ] Verify `scenario_agent.py` and `debrief_agent.py` work with real Gemini API
+
+**Person A (Frontend):**
+- [ ] Polish CSS and error handling
+- [ ] Test empty inputs, long inputs, special characters
+- [ ] Verify trajectory canvas renders correctly with mock data
 
 ### 1:00 PM — Integration Testing
 
-**Who:** Demo/Integration Lead
+**Person C (Agents/Backend) — LEAD THIS:**
+- [ ] Test API key works: `python -c "from scenario_agent import get_scene_from_gemini; print(get_scene_from_gemini('test'))"`
+- [ ] Test full `/rescue` endpoint with real Gemini
+- [ ] Wire `run_episode()` from Person B into the route
+- [ ] Serve frontend static files from FastAPI
 
-- [ ] Test API key works
-- [ ] Test scenario generation: `python -c "from scenario_agent import get_scene_from_gemini; print(get_scene_from_gemini('test'))"`
-- [ ] Test debrief generation
-- [ ] Test full loop: disaster description → scene → robot run → debrief
-- [ ] Test FastAPI + browser UI
-
-**Checklist:**
+**Person A (Frontend) — VERIFY:**
 - [ ] User can type disaster description
-- [ ] Scene JSON appears
-- [ ] Robot runs (even if MuJoCo viewer is headless)
-- [ ] Debrief text appears
+- [ ] Submit button triggers fetch
+- [ ] Real JSON appears (no longer mocked)
+- [ ] Trajectory visualizes correctly
+- [ ] Debrief text displays
 
-### 2:00 PM — Debug & Polish
+**Person B (RL) — CHECK:**
+- [ ] Training still running? How many steps completed?
+- [ ] If >150k: training is on track
+- [ ] If <100k: may need fallback at 1:30 PM
 
-- [ ] Fix any broken components
-- [ ] Test edge cases (empty input, very long input)
-- [ ] Add error handling + fallbacks
-- [ ] Make UI prettier (CSS, layout)
+### 2:00 PM — Debug & Polish (No new features after this)
 
-**Critical:** If training finished, celebrate! If not, that's OK — pre-trained model works.
+**Person C (Agents/Backend):**
+- [ ] Fix any API errors or timeouts
+- [ ] Add fallback to `mock_gemini.py` if Gemini is slow
+- [ ] Ensure `/rescue` returns valid JSON always
 
-### 3:00 PM — Demo Rehearsal
+**Person A (Frontend):**
+- [ ] Fix layout issues on mobile/tablet
+- [ ] Add error message display if `/rescue` fails
+- [ ] Polish loading spinner and transitions
+- [ ] Test 3 disaster scenarios end-to-end
 
+**Person B (RL):**
+- [ ] Check training status one more time
+- [ ] If training finished: great! New model is ready
+- [ ] If training stalled: **stop it at 2:30 PM and use pre-trained `ppo_model_final.zip`**
+
+### 3:00 PM — Demo Rehearsal (Stop building at 3:30)
+
+**Person C (Agents/Backend) + Person A (Frontend) — DEMO LEAD:**
 - [ ] Prepare 2 hardcoded disaster scenarios:
   ```
-  Scenario 1: "A 7.5 magnitude earthquake has devastated downtown. Multiple buildings collapsed. We have a signal from a survivor 50 meters northeast."
+  Scenario 1: "A 7.5 magnitude earthquake has devastated downtown. 
+              Multiple buildings collapsed. Survivor 50 meters northeast."
   
-  Scenario 2: "A flood has swept through the city. We have reports of a survivor trapped on the 3rd floor of a submerged building."
+  Scenario 2: "A flood has swept through the city. Survivor trapped 
+              on the 3rd floor of a submerged building."
   ```
 
-- [ ] Run full demo 3 times, timing it to <3 min per run
-- [ ] Practice explaining what's happening:
-  - "We input a disaster description"
-  - "Gemini generates a dynamic scene with obstacles and survivor position"
-  - "Our trained robot policy navigates to the survivor"
-  - "Gemini analyzes the rescue attempt and provides a debrief"
+- [ ] Run full demo 3 times, timing: <3 min per run
+- [ ] Practice talking points:
+  - "Gemini generates a dynamic scene with obstacles"
+  - "Our RL policy navigates the robot to the survivor"
+  - "Gemini analyzes the trajectory and provides a debrief"
+
+**Person B (RL):**
+- [ ] Have `eval.py` ready as a backup demo (shows just the RL)
+- [ ] Test it locally: `python eval.py` (should run in <30 sec)
 
 ### 4:00 PM — Record Video & Submit
 
-**Who:** Demo Lead
+**Person C (Agents/Backend) — LEAD THIS:**
 
 **Record a 60-second Loom:**
-1. Screen record your demo
-2. Show: text input → Gemini scene → MuJoCo window → debrief output
-3. Do one clean run (1 min)
-4. Upload to Loom (free)
-5. Get shareable link
+1. Open `http://localhost:8000`
+2. Type disaster: *"A 7.5 magnitude earthquake has devastated downtown..."*
+3. Show loading spinner
+4. Show Gemini-generated scene JSON
+5. Show robot trajectory canvas
+6. Show final debrief text
+7. Do one clean run (60 sec total)
+8. Upload to Loom.com (free)
+9. Get shareable link
 
-**Prepare Submission:**
-- [ ] Repo is public on GitHub
-- [ ] All files committed and pushed
-- [ ] README + SETUP + this file in repo
-- [ ] One clear "Getting Started" section at top of README
+**Push to GitHub:**
+```bash
+git add -A
+git commit -m "Final demo: disaster rescue robot with Gemini + RL"
+git push origin main
+```
+
+**Prepare submission:**
+- [ ] All 3 people listed as contributors
+- [ ] README has: project description + setup instructions
+- [ ] `plan.md` + API contract documented in repo
 - [ ] Loom video link ready
 
-**Submit form at:** https://cerebralvalley.ai/e/google-io-hackathon/hackathon/submit
+**Submit form:** https://cerebralvalley.ai/e/google-io-hackathon/hackathon/submit
 - [ ] Project name: "Disaster Rescue Robot"
-- [ ] Team members: All names
+- [ ] Team members: All 3 names
 - [ ] Repo link (GitHub public)
 - [ ] Loom video link
-- [ ] 1-2 sentence description
+- [ ] Description: "AI system combining Gemini for scene generation, RL policy for navigation, and Gemini for trajectory analysis. Live demo generates disaster scenarios and rescues survivors."
 
 **Deadline: 5:00 PM**
 
 ### 4:30 PM — Stop Building
 
-**No new features after 4:30 PM.** Polish and submit only.
+**All teams: No new features.** Only submit and prepare for live demo.
+
+- [ ] All code committed and pushed
+- [ ] Everyone rehearsed the 3-minute pitch
+- [ ] Backup: `python eval.py` ready if web demo crashes
 
 ### 5:00 PM — Submit & Celebrate 🎉
 
@@ -617,29 +1046,52 @@ async def rescue(request: dict):
 
 ## 📋 Final Checklist (4:55 PM)
 
+**All three people:**
 - [ ] Repo pushed to GitHub (public)
-- [ ] All team members' names in repo
-- [ ] README has clear setup + project description
-- [ ] Video recorded and uploaded (Loom link)
-- [ ] Form submitted with correct links
-- [ ] Demo tested at least once with no crashes
-- [ ] Everyone knows what to say during live judging
+- [ ] All team members' names in README + repo description
+- [ ] README has: project overview, setup instructions, API docs
+- [ ] Video recorded and uploaded (Loom link in submission)
+- [ ] Form submitted with all correct links
+- [ ] Everyone rehearsed the 3-minute pitch
+- [ ] Demo tested once live — no crashes
+
+**Person B (RL):**
+- [ ] `eval.py` works as backup demo
+- [ ] Pre-trained model is in `./models/ppo_model_final.zip`
+
+**Person C (Agents/Backend):**
+- [ ] `/rescue` endpoint responds in <5 sec
+- [ ] Fallback to `mock_gemini.py` if API is slow
+- [ ] Loom video link in submission form
+
+**Person A (Frontend):**
+- [ ] UI renders on judges' screen resolution
+- [ ] Loading spinner visible during API call
+- [ ] Error messages are clear
 
 ---
 
 ## 🎤 Live Demo Talking Points (3 min)
 
 **Intro (30 sec):**
-"We built an AI-powered rescue robot using Gemini 3.5 Flash and reinforcement learning. Given a disaster scenario, our system generates a dynamic environment, trains a policy to navigate and rescue survivors."
+"We built an AI system that rescues survivors in disaster scenarios. It combines three AI components: Gemini generates dynamic environments, our RL policy navigates the robot, and Gemini provides real-time analysis."
 
 **Demo (2 min):**
-1. Type disaster: *"Earthquake in downtown area, survivor 5km northeast"*
-2. Show scene JSON: *"Gemini generates obstacles and hazard zones"*
-3. Run evaluation: *"Our trained RL policy navigates to the survivor"*
-4. Show debrief: *"Gemini analyzes the trajectory and gives a natural language summary"*
+1. Type disaster: *"7.5 magnitude earthquake, multiple collapsed buildings, survivor northeast"*
+2. Show scene JSON: *"Real Gemini generates obstacles and hazard zones dynamically"*
+3. Run episode: *"Our trained RL policy navigates to reach the survivor"*
+4. Show trajectory map: *"Robot's actual path through the environment"*
+5. Show debrief: *"Gemini analyzes the rescue and summarizes what happened"*
 
 **Close (30 sec):**
-"The system combines scenario generation, RL policy learning, and trajectory analysis — three agents working together. Future work: real-time trajectory optimization, multi-survivor rescue."
+"The system handles scenario generation, policy learning, and analysis — three specialized AI models working in concert. This could scale to real disaster response with multi-survivor coordination."
+
+---
+
+**Division of Speaking:**
+- **Person A:** Intro + UI/demo walkthrough ("Type in the disaster...")
+- **Person C:** Scene generation + Gemini explanations ("Gemini generates...")
+- **Person B:** RL policy explanation ("Our trained policy navigates...")
 
 ---
 
