@@ -1,6 +1,7 @@
 'use client';
 
 import Console from './Console';
+import TrainingRuns from './TrainingRuns';
 
 export default function Page() {
   const scrollToConsole = () => {
@@ -146,78 +147,7 @@ export default function Page() {
           <span className="sec-idx mono">[ SECTION 03 / METRICS ]</span>
         </div>
 
-        <div className="metrics-section">
-          {/* Left: Directory structure */}
-          <div>
-            <h3 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 16px', fontStyle: 'italic' }}>
-              Training Run File Pipeline
-            </h3>
-            <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--ink-mid)', marginBottom: '20px' }}>
-              To ensure training reproducibility and model comparison post-hackathon, 
-              each run exports evaluation scores, model checkpoints, and configuration parameters in a structured format:
-            </p>
-            
-            <div className="runs-box">
-              <div>runs/</div>
-              <div>&nbsp;&nbsp;└── <b>ppo_fixed_six_final/</b></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span className="dim">summary.json</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span className="dim"># Run parameters &amp; meta</span></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span className="dim">eval.json</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span className="dim"># 6-scene test results</span></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <b>checkpoints/</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span className="dim"># Models at step checkpoints</span></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├── <span className="dim">ppo_fixed_six_120000_steps.zip</span></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└── <span className="dim">ppo_fixed_six_480000_steps.zip</span></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── <span className="dim">tb_logs/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span className="dim"># TensorBoard diagnostics</span></div>
-            </div>
-          </div>
-
-          {/* Right: SVG reward chart */}
-          <div className="chart-box">
-            <h4>PPO Policy Learning Curve (Cumulative Reward)</h4>
-            <div className="chart-container">
-              <svg viewBox="0 0 400 200" width="100%" height="100%">
-                {/* Grid lines */}
-                <line x1="30" y1="20" x2="380" y2="20" stroke="#d8d2c4" strokeDasharray="3,3" />
-                <line x1="30" y1="70" x2="380" y2="70" stroke="#d8d2c4" strokeDasharray="3,3" />
-                <line x1="30" y1="120" x2="380" y2="120" stroke="#d8d2c4" strokeDasharray="3,3" />
-                <line x1="30" y1="170" x2="380" y2="170" stroke="#c2bbac" />
-                
-                {/* X Axis division */}
-                <line x1="30" y1="170" x2="30" y2="15" stroke="#c2bbac" />
-                <line x1="120" y1="170" x2="120" y2="175" stroke="#c2bbac" />
-                <line x1="210" y1="170" x2="210" y2="175" stroke="#c2bbac" />
-                <line x1="300" y1="170" x2="300" y2="175" stroke="#c2bbac" />
-                <line x1="380" y1="170" x2="380" y2="175" stroke="#c2bbac" />
-
-                {/* X labels */}
-                <text x="30" y="190" fontSize="9" fill="#837c6f" textAnchor="middle" fontFamily="monospace">0k</text>
-                <text x="120" y="190" fontSize="9" fill="#837c6f" textAnchor="middle" fontFamily="monospace">120k</text>
-                <text x="210" y="190" fontSize="9" fill="#837c6f" textAnchor="middle" fontFamily="monospace">240k</text>
-                <text x="300" y="190" fontSize="9" fill="#837c6f" textAnchor="middle" fontFamily="monospace">360k</text>
-                <text x="380" y="190" fontSize="9" fill="#837c6f" textAnchor="middle" fontFamily="monospace">500k</text>
-
-                {/* Y labels */}
-                <text x="22" y="173" fontSize="9" fill="#837c6f" textAnchor="end" fontFamily="monospace">-250</text>
-                <text x="22" y="123" fontSize="9" fill="#837c6f" textAnchor="end" fontFamily="monospace">-150</text>
-                <text x="22" y="73" fontSize="9" fill="#837c6f" textAnchor="end" fontFamily="monospace">-50</text>
-                <text x="22" y="23" fontSize="9" fill="#837c6f" textAnchor="end" fontFamily="monospace">+50</text>
-
-                {/* Training Curve Line */}
-                <path 
-                  d="M 30 170 Q 60 160, 90 145 T 150 120 T 210 80 T 280 62 T 340 50 T 380 44" 
-                  fill="none" 
-                  stroke="#b02e26" 
-                  strokeWidth="2.5" 
-                />
-                
-                {/* Dotted threshold line */}
-                <line x1="30" y1="44" x2="380" y2="44" stroke="#2a5c3a" strokeWidth="1" strokeDasharray="4,2" />
-                <text x="375" y="38" fontSize="8" fill="#2a5c3a" textAnchor="end" fontWeight="600" fontFamily="monospace">SOLVED THRESHOLD</text>
-              </svg>
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--ink-dim)', fontStyle: 'italic', marginTop: '10px', textAlign: 'center' }}>
-              * Mean episode reward trends positive and converges near step 360k.
-            </div>
-          </div>
-        </div>
+        <TrainingRuns />
       </section>
 
       {/* Footer */}

@@ -447,11 +447,11 @@ body::before{
   background: var(--bg-1);
   border: 1px solid var(--rule);
   padding: 20px;
-  font-family: monospace;
   font-size: 13px;
   color: var(--ink-mid);
   overflow-x: auto;
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 .runs-box b {
   color: var(--ink);
@@ -477,6 +477,162 @@ body::before{
   width: 100%;
   height: 200px;
   position: relative;
+}
+
+.training-run-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.training-run-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  font-style: italic;
+}
+.training-run-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.training-run-select-label {
+  font-size: 12px;
+  color: var(--ink-dim);
+  font-style: italic;
+}
+.training-run-select {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 28px 6px 12px;
+  border: 1px solid var(--rule);
+  background: var(--bg-1);
+  color: var(--ink);
+  border-radius: 4px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23837c6f' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.training-run-select:focus {
+  outline: none;
+  border-color: var(--red);
+}
+.training-run-subtitle {
+  font-size: 13px;
+  color: var(--red);
+  font-weight: 500;
+  margin: 0 0 10px;
+  font-style: normal;
+}
+.training-run-desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-mid);
+  margin: 0 0 20px;
+}
+
+.advanced-stats {
+  margin-top: 20px;
+  border: 1px solid var(--rule);
+  background: var(--bg-1);
+}
+.advanced-stats summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.advanced-stats summary::-webkit-details-marker {
+  display: none;
+}
+.advanced-stats summary::after {
+  content: '▾';
+  color: var(--ink-dim);
+  font-style: normal;
+  transition: transform 0.15s ease;
+}
+.advanced-stats[open] summary::after {
+  transform: rotate(180deg);
+}
+.advanced-stats summary:hover {
+  color: var(--red);
+}
+.advanced-stats-body {
+  padding: 0 16px 16px;
+  border-top: 1px dashed var(--rule);
+}
+.stats-group + .stats-group {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--rule-soft);
+}
+.stats-group h4 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 600;
+  font-style: normal;
+}
+.stats-grid {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.stat-row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.stat-row dt {
+  margin: 0;
+  color: var(--ink-dim);
+  font-style: italic;
+  font-weight: 400;
+}
+.stat-row dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 500;
+  font-style: normal;
+}
+
+.chart-box-hd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.chart-box-hd h4 {
+  margin: 0;
+}
+.chart-run-tag {
+  font-size: 11px;
+  color: var(--red);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-style: normal;
+}
+.chart-caption {
+  font-size: 11px;
+  color: var(--ink-dim);
+  font-style: italic;
+  margin: 10px 0 0;
+  text-align: center;
 }
 
 .landing-footer {
