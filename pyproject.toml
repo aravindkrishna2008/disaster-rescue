@@ -4,4 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.0",
+    "mujoco>=3.0.0",
+    "gymnasium>=0.29.0",
+    "stable-baselines3>=2.3.2",
+    "google-generativeai>=0.8.0",
+]
