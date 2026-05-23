@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from export_run import list_runs, load_run_manifest, manifest_to_frontend
 from disaster_env import DEFAULT_SCENE
 from gemini_client import SURVIVORS, get_gemini_target
 from rescue_runner import run_episode
@@ -32,10 +33,12 @@ from scenes import GENERATED_SCENES, get_scene
 _HERE = Path(__file__).resolve().parent
 _STATIC = _HERE / "static"
 _OUTPUT = _HERE / "output"
+_RUNS = _HERE / "runs"
 _OUTPUT.mkdir(exist_ok=True)
+_RUNS.mkdir(exist_ok=True)
 
 MODEL_PATH = os.environ.get(
-    "BATTLE_ANGEL_MODEL", str(_HERE / "models" / "ppo_fixed_six_final")
+    "BATTLE_ANGEL_MODEL", str(_HERE / "models" / "ppo_buried_detection_final")
 )
 MAX_STEPS = int(os.environ.get("BATTLE_ANGEL_MAX_STEPS", "300"))
 
@@ -55,6 +58,7 @@ def _scene_summary(idx: int, scene: dict) -> dict:
         "difficulty": scene.get("difficulty", "medium"),
         "robot_start": scene.get("robot_start"),
         "survivor_pos": scene.get("survivor_pos"),
+        "survivor": scene.get("survivor", {}),
         "obstacle_count": len(scene.get("obstacles", [])),
         "hazard_count": len(scene.get("hazards", [])),
     }
@@ -83,6 +87,8 @@ def _run_scene(idx: int, max_steps: int) -> dict:
         "steps": int(result.get("steps", 0)),
         "total_reward": float(result.get("total_reward", 0.0)),
         "trajectory": result.get("trajectory", []),
+        "detection_event": result.get("detection_event"),
+        "survivor": scene.get("survivor", {}),
         "gif_url": f"/gifs/{gif_name}",
         "max_steps": max_steps,
     }
@@ -130,6 +136,7 @@ def create_app() -> FastAPI:
             return (_STATIC / "index.html").read_text()
 
     app.mount("/gifs", StaticFiles(directory=_OUTPUT), name="gifs")
+    app.mount("/run-gifs", StaticFiles(directory=_RUNS), name="run-gifs")
 
     @app.get("/health")
     def health() -> dict:
@@ -145,6 +152,17 @@ def create_app() -> FastAPI:
         if not gifs:
             raise HTTPException(status_code=404, detail="no episode gif yet")
         return FileResponse(gifs[0], media_type="image/gif")
+
+    @app.get("/runs")
+    def get_runs() -> dict:
+        return {"runs": list_runs()}
+
+    @app.get("/runs/{run_id}")
+    def get_run(run_id: str) -> dict:
+        manifest = load_run_manifest(run_id)
+        if manifest is None:
+            raise HTTPException(status_code=404, detail=f"run {run_id!r} not found")
+        return manifest_to_frontend(manifest)
 
     @app.get("/scenes")
     def list_scenes() -> dict:

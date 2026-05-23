@@ -19,6 +19,7 @@ models/
 tb_logs/
 output/
 tmp/
+runs/**/gifs/
 
 # Environment & secrets
 .env

@@ -37,6 +37,7 @@ REACH_DIST = 0.75
 REACH_BONUS = 200.0
 HAZARD_PEN = 1.0
 COLLISION_PEN = 8.0
+DETECTION_BONUS = 5.0
 MAX_STEPS = 600
 WORLD_HALF = 8.0
 ACTION_SPEED = 0.18
@@ -129,12 +130,37 @@ def _prepare_humanoid_body_xml() -> str:
     return ET.tostring(torso_body, encoding="unicode")
 
 
+def _burial_cover_xml(scene: dict, survivor: list[float]) -> str:
+    survivor_meta = scene.get("survivor", {})
+    if not survivor_meta.get("buried"):
+        return ""
+
+    sx, sy, _ = survivor
+    cover = survivor_meta.get("cover", "rubble")
+    rubble_pieces = [
+        (-0.34, -0.12, 0.32, 0.16, 0.18, 0.18, "0.34 0.31 0.28 1"),
+        (0.28, 0.14, 0.26, 0.20, 0.14, 0.18, "0.42 0.38 0.34 1"),
+        (-0.02, 0.38, 0.42, 0.12, 0.12, 0.12, "0.48 0.44 0.39 1"),
+        (0.16, -0.36, 0.18, 0.36, 0.12, 0.15, "0.29 0.27 0.25 1"),
+    ]
+
+    cover_xml = f'    <site name="buried_survivor_signal" pos="{sx} {sy} 0.08" size="0.16" rgba="0.0 0.85 1.0 0.9"/>\n'
+    for i, (dx, dy, hx, hy, hz, z, rgba) in enumerate(rubble_pieces):
+        cover_xml += (
+            f'    <geom name="{cover}_cover_{i}" type="box" '
+            f'pos="{sx + dx} {sy + dy} {z}" size="{hx} {hy} {hz}" '
+            f'rgba="{rgba}" contype="0" conaffinity="0"/>\n'
+        )
+    return cover_xml
+
+
 def _build_xml(scene: dict) -> str:
     survivor = _vec3(scene.get("survivor_pos", DEFAULT_SCENE["survivor_pos"]), default_z=0.0)
     obstacles = scene.get("obstacles", DEFAULT_SCENE["obstacles"])
     hazards = scene.get("hazards", DEFAULT_SCENE["hazards"])
     g1_default_xml, g1_asset_xml, g1_body_xml = _prepare_g1_robot_xml()
     humanoid_body_xml = _prepare_humanoid_body_xml()
+    burial_cover_xml = _burial_cover_xml(scene, survivor)
 
     obs_xml = ""
     for i, obstacle in enumerate(obstacles):
@@ -181,6 +207,7 @@ def _build_xml(scene: dict) -> str:
 
 {obs_xml}
 {haz_xml}
+{burial_cover_xml}
 
     <body name="survivor" pos="{survivor[0]} {survivor[1]} 0">
       {humanoid_body_xml}
@@ -214,6 +241,10 @@ class DisasterEnv(gym.Env):
         self._pos = _xy(self.scene.get("robot_start", DEFAULT_SCENE["robot_start"]))
         self._prev_pos = self._pos.copy()
         self._surv_xy = _xy(self.scene.get("survivor_pos", DEFAULT_SCENE["survivor_pos"]))
+        self._survivor_meta = dict(self.scene.get("survivor", {}))
+        self._survivor_buried = bool(self._survivor_meta.get("buried", False))
+        self._detection_radius = float(self._survivor_meta.get("detection_radius", 0.0))
+        self._detected_once = False
         self._obstacles = [
             _obstacle_bounds(obstacle)
             for obstacle in self.scene.get("obstacles", DEFAULT_SCENE["obstacles"])[:OBSTACLE_COUNT]
@@ -239,7 +270,8 @@ class DisasterEnv(gym.Env):
             + [WORLD_HALF * 2] * 2
             + [WORLD_HALF * 2]
             + [ACTION_SPEED] * 2
-            + [WORLD_HALF * 2, WORLD_HALF * 2, WORLD_HALF] * OBSTACLE_COUNT,
+            + [WORLD_HALF * 2, WORLD_HALF * 2, WORLD_HALF] * OBSTACLE_COUNT
+            + [1.0, 1.0, 1.0],
             dtype=np.float32,
         )
         self.observation_space = spaces.Box(-obs_high, obs_high, dtype=np.float32)
@@ -255,6 +287,32 @@ class DisasterEnv(gym.Env):
 
     def _distance(self) -> float:
         return float(np.linalg.norm(self._surv_xy - self._pos))
+
+    def _survivor_detected(self, dist: float | None = None) -> bool:
+        if not self._survivor_buried or self._detection_radius <= 0.0:
+            return False
+        current_dist = self._distance() if dist is None else dist
+        return current_dist <= self._detection_radius
+
+    def _detection_info(self, dist: float | None = None) -> dict:
+        detected = self._survivor_detected(dist)
+        return {
+            "survivor_buried": self._survivor_buried,
+            "survivor_detected": detected,
+            "detection_radius": self._detection_radius,
+            "detection_signal": self._survivor_meta.get("signal"),
+            "survivor_cover": self._survivor_meta.get("cover"),
+        }
+
+    def _detection_features(self, dist: float | None = None) -> list[float]:
+        current_dist = self._distance() if dist is None else dist
+        buried = 1.0 if self._survivor_buried else 0.0
+        detected = 1.0 if self._survivor_detected(current_dist) else 0.0
+        if not self._survivor_buried or self._detection_radius <= 0.0:
+            strength = 0.0
+        else:
+            strength = max(0.0, 1.0 - current_dist / self._detection_radius)
+        return [buried, detected, strength]
 
     def _collides(self, xy: np.ndarray) -> bool:
         for center, half in self._obstacles:
@@ -284,7 +342,15 @@ class DisasterEnv(gym.Env):
         dist = np.linalg.norm(rel)
         vel = self._pos - self._prev_pos
         return np.array(
-            [*self._pos, *self._surv_xy, *rel, dist, *vel, *self._obstacle_features()],
+            [
+                *self._pos,
+                *self._surv_xy,
+                *rel,
+                dist,
+                *vel,
+                *self._obstacle_features(),
+                *self._detection_features(dist),
+            ],
             dtype=np.float32,
         )
 
@@ -294,8 +360,9 @@ class DisasterEnv(gym.Env):
         self._prev_pos = self._pos.copy()
         self._step_count = 0
         self._prev_dist = self._distance()
+        self._detected_once = self._survivor_detected(self._prev_dist)
         self._sync_mujoco()
-        return self._get_obs(), {}
+        return self._get_obs(), self._detection_info(self._prev_dist)
 
     def step(self, action: np.ndarray):
         action = np.asarray(action, dtype=np.float64)
@@ -323,6 +390,9 @@ class DisasterEnv(gym.Env):
             reward -= COLLISION_PEN
         if self._in_hazard(self._pos):
             reward -= HAZARD_PEN
+        if self._survivor_detected(dist) and not self._detected_once:
+            reward += DETECTION_BONUS
+            self._detected_once = True
 
         reached = dist < REACH_DIST
         truncated = self._step_count >= MAX_STEPS
@@ -335,6 +405,7 @@ class DisasterEnv(gym.Env):
             "steps": self._step_count,
             "collided": collided,
             "z": GROUND_Z,
+            **self._detection_info(dist),
         }
         return self._get_obs(), float(reward), reached, truncated, info
 

@@ -4,6 +4,7 @@ export type AdvancedStat = {
   label: string;
   value: string;
   group?: string;
+  
 };
 
 export type TrainingRun = {
@@ -19,6 +20,14 @@ export type TrainingRun = {
   checkpoints: string[];
   fileTree: string[];
   advancedStats: AdvancedStat[];
+  source?: 'runs' | 'static';
+  exportedAt?: string;
+  eval?: {
+    success_count?: number;
+    scene_count?: number;
+    detection_count?: number;
+    mean_reward?: number;
+  };
 };
 
 export const TRAINING_RUNS: TrainingRun[] = [

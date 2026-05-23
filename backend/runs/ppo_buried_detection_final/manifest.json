@@ -1,0 +1,341 @@
+{
+  "id": "ppo_buried_detection_final",
+  "name": "ppo_buried_detection_final",
+  "model_path": "models/ppo_buried_detection_final.zip",
+  "total_steps": 500000,
+  "n_envs": 8,
+  "obs_dim": 21,
+  "max_steps_eval": 300,
+  "policy_network": "MLP 256 \u00d7 256",
+  "batch_size": 256,
+  "n_steps": 2048,
+  "gamma": 0.99,
+  "gae_lambda": 0.95,
+  "clip_range": 0.2,
+  "tensorboard_log": "tb_logs/PPO_8",
+  "git_commit": "ab047d6",
+  "exported_at": "2026-05-23T20:36:57.911122+00:00",
+  "checkpoints": [
+    "ppo_buried_detection_160000_steps.zip",
+    "ppo_buried_detection_320000_steps.zip",
+    "ppo_buried_detection_480000_steps.zip",
+    "ppo_buried_detection_final.zip"
+  ],
+  "subtitle": "8-scene vectorized PPO \u00b7 obs 21D",
+  "solved_threshold": 0,
+  "y_min": -176.0,
+  "y_max": 459.9,
+  "caption": "Mean episode reward from TensorBoard (improves 538 over 507,904 steps).",
+  "curve": [
+    {
+      "step": 16384,
+      "reward": -102.59
+    },
+    {
+      "step": 32768,
+      "reward": -155.99
+    },
+    {
+      "step": 49152,
+      "reward": -150.58
+    },
+    {
+      "step": 65536,
+      "reward": -130.68
+    },
+    {
+      "step": 81920,
+      "reward": -24.45
+    },
+    {
+      "step": 98304,
+      "reward": 177.95
+    },
+    {
+      "step": 114688,
+      "reward": 323.18
+    },
+    {
+      "step": 131072,
+      "reward": 375.52
+    },
+    {
+      "step": 147456,
+      "reward": 396.55
+    },
+    {
+      "step": 163840,
+      "reward": 421.61
+    },
+    {
+      "step": 180224,
+      "reward": 404.75
+    },
+    {
+      "step": 196608,
+      "reward": 426.06
+    },
+    {
+      "step": 212992,
+      "reward": 434.49
+    },
+    {
+      "step": 229376,
+      "reward": 436.81
+    },
+    {
+      "step": 245760,
+      "reward": 433.41
+    },
+    {
+      "step": 262144,
+      "reward": 412.14
+    },
+    {
+      "step": 278528,
+      "reward": 425.94
+    },
+    {
+      "step": 294912,
+      "reward": 433.85
+    },
+    {
+      "step": 311296,
+      "reward": 432.45
+    },
+    {
+      "step": 327680,
+      "reward": 437.86
+    },
+    {
+      "step": 344064,
+      "reward": 438.36
+    },
+    {
+      "step": 360448,
+      "reward": 438.47
+    },
+    {
+      "step": 376832,
+      "reward": 437.39
+    },
+    {
+      "step": 393216,
+      "reward": 389.77
+    },
+    {
+      "step": 409600,
+      "reward": 436.41
+    },
+    {
+      "step": 425984,
+      "reward": 433.23
+    },
+    {
+      "step": 442368,
+      "reward": 439.95
+    },
+    {
+      "step": 458752,
+      "reward": 432.0
+    },
+    {
+      "step": 475136,
+      "reward": 439.63
+    },
+    {
+      "step": 491520,
+      "reward": 439.91
+    },
+    {
+      "step": 507904,
+      "reward": 435.52
+    }
+  ],
+  "eval": {
+    "model": "ppo_buried_detection_final",
+    "max_steps": 300,
+    "scene_count": 8,
+    "success_count": 8,
+    "mean_steps_reached": 76.4,
+    "mean_reward": 445.06,
+    "detection_count": 3,
+    "scenes": [
+      {
+        "scene_index": 0,
+        "scene_name": "earthquake_corridor",
+        "reached": true,
+        "steps": 84,
+        "total_reward": 460.89,
+        "detection_event": false,
+        "episode_file": "episodes/01_earthquake_corridor.json",
+        "gif": "gifs/01_earthquake_corridor.gif"
+      },
+      {
+        "scene_index": 1,
+        "scene_name": "flooded_hospital",
+        "reached": true,
+        "steps": 84,
+        "total_reward": 467.38,
+        "detection_event": false,
+        "episode_file": "episodes/02_flooded_hospital.json",
+        "gif": "gifs/02_flooded_hospital.gif"
+      },
+      {
+        "scene_index": 2,
+        "scene_name": "wildfire_shelter",
+        "reached": true,
+        "steps": 84,
+        "total_reward": 468.17,
+        "detection_event": false,
+        "episode_file": "episodes/03_wildfire_shelter.json",
+        "gif": "gifs/03_wildfire_shelter.gif"
+      },
+      {
+        "scene_index": 3,
+        "scene_name": "collapsed_bridge",
+        "reached": true,
+        "steps": 85,
+        "total_reward": 457.46,
+        "detection_event": false,
+        "episode_file": "episodes/04_collapsed_bridge.json",
+        "gif": "gifs/04_collapsed_bridge.gif"
+      },
+      {
+        "scene_index": 4,
+        "scene_name": "chemical_plant",
+        "reached": true,
+        "steps": 72,
+        "total_reward": 403.04,
+        "detection_event": false,
+        "episode_file": "episodes/05_chemical_plant.json",
+        "gif": "gifs/05_chemical_plant.gif"
+      },
+      {
+        "scene_index": 5,
+        "scene_name": "downtown_rubble",
+        "reached": true,
+        "steps": 61,
+        "total_reward": 418.86,
+        "detection_event": true,
+        "episode_file": "episodes/06_downtown_rubble.json",
+        "gif": "gifs/06_downtown_rubble.gif"
+      },
+      {
+        "scene_index": 6,
+        "scene_name": "parking_garage_pancake",
+        "reached": true,
+        "steps": 81,
+        "total_reward": 469.53,
+        "detection_event": true,
+        "episode_file": "episodes/07_parking_garage_pancake.json",
+        "gif": "gifs/07_parking_garage_pancake.gif"
+      },
+      {
+        "scene_index": 7,
+        "scene_name": "aftershock_triage_maze",
+        "reached": true,
+        "steps": 60,
+        "total_reward": 415.12,
+        "detection_event": true,
+        "episode_file": "episodes/08_aftershock_triage_maze.json",
+        "gif": "gifs/08_aftershock_triage_maze.gif"
+      }
+    ]
+  },
+  "file_tree": [
+    "runs/ppo_buried_detection_final/",
+    "  \u251c\u2500\u2500 summary.json",
+    "  \u251c\u2500\u2500 curve.json",
+    "  \u251c\u2500\u2500 eval.json",
+    "  \u251c\u2500\u2500 episodes/          # trajectories + obs/action rollouts",
+    "  \u2514\u2500\u2500 gifs/              # eval GIFs per scene"
+  ],
+  "advanced_stats": [
+    {
+      "group": "Run",
+      "label": "Algorithm",
+      "value": "PPO (Proximal Policy Optimization)"
+    },
+    {
+      "group": "Run",
+      "label": "Policy network",
+      "value": "MLP 256 \u00d7 256"
+    },
+    {
+      "group": "Run",
+      "label": "Total timesteps",
+      "value": "500,000"
+    },
+    {
+      "group": "Run",
+      "label": "Parallel envs",
+      "value": "8"
+    },
+    {
+      "group": "Run",
+      "label": "Obs dimension",
+      "value": "21"
+    },
+    {
+      "group": "Run",
+      "label": "Exported",
+      "value": "2026-05-23"
+    },
+    {
+      "group": "Run",
+      "label": "Git commit",
+      "value": "ab047d6"
+    },
+    {
+      "group": "Hyperparameters",
+      "label": "Batch size",
+      "value": "256"
+    },
+    {
+      "group": "Hyperparameters",
+      "label": "n_steps",
+      "value": "2048"
+    },
+    {
+      "group": "Hyperparameters",
+      "label": "Gamma (\u03b3)",
+      "value": "0.99"
+    },
+    {
+      "group": "Hyperparameters",
+      "label": "GAE \u03bb",
+      "value": "0.95"
+    },
+    {
+      "group": "Hyperparameters",
+      "label": "Clip range",
+      "value": "0.2"
+    },
+    {
+      "group": "Evaluation",
+      "label": "Scenes evaluated",
+      "value": "8 fixed disaster layouts"
+    },
+    {
+      "group": "Evaluation",
+      "label": "Success @ export",
+      "value": "8 / 8 scenes"
+    },
+    {
+      "group": "Evaluation",
+      "label": "Mean steps (reached)",
+      "value": "76.4"
+    },
+    {
+      "group": "Evaluation",
+      "label": "Mean reward",
+      "value": "445.06"
+    },
+    {
+      "group": "Evaluation",
+      "label": "Buried detections",
+      "value": "3"
+    }
+  ]
+}

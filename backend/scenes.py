@@ -85,6 +85,12 @@ GENERATED_SCENES: list[dict] = [
         "name": "downtown_rubble",
         "robot_start": [0.0, -6.0, 1.0],
         "survivor_pos": [0.6, 5.6, 1.0],
+        "survivor": {
+            "buried": True,
+            "cover": "rubble",
+            "detection_radius": 2.0,
+            "signal": "thermal_audio",
+        },
         "obstacles": [
             {"pos": [-2.2, -2.0, 1.0], "size": [1.0, 0.35, 1.0]},
             {"pos": [1.6, 0.4, 1.0], "size": [0.4, 1.7, 1.0]},
@@ -95,6 +101,50 @@ GENERATED_SCENES: list[dict] = [
             {"center": [-3.0, 1.5, 0.0], "radius": 0.9},
         ],
         "difficulty": "medium",
+    },
+    {
+        "name": "parking_garage_pancake",
+        "robot_start": [5.5, -5.2, 1.0],
+        "survivor_pos": [-4.8, 4.6, 1.0],
+        "survivor": {
+            "buried": True,
+            "cover": "pancake_slab",
+            "detection_radius": 2.0,
+            "signal": "acoustic_vibration",
+        },
+        "obstacles": [
+            {"pos": [2.6, -1.7, 1.0], "size": [1.4, 0.4, 1.0]},
+            {"pos": [0.1, 0.5, 1.0], "size": [0.45, 1.7, 1.0]},
+            {"pos": [-2.7, 2.6, 1.0], "size": [1.2, 0.4, 1.0]},
+        ],
+        "hazards": [
+            {"center": [4.5, 0.0, 0.0], "radius": 0.9},
+            {"center": [1.2, 3.1, 0.0], "radius": 1.0},
+            {"center": [-4.0, -0.4, 0.0], "radius": 0.85},
+        ],
+        "difficulty": "hard",
+    },
+    {
+        "name": "aftershock_triage_maze",
+        "robot_start": [0.0, -6.0, 1.0],
+        "survivor_pos": [0.4, 5.4, 1.0],
+        "survivor": {
+            "buried": True,
+            "cover": "rubble",
+            "detection_radius": 2.0,
+            "signal": "thermal_audio",
+        },
+        "obstacles": [
+            {"pos": [-2.0, -2.0, 1.0], "size": [1.2, 0.35, 1.0]},
+            {"pos": [1.5, 0.4, 1.0], "size": [0.4, 1.7, 1.0]},
+            {"pos": [-1.2, 3.1, 1.0], "size": [0.9, 0.35, 1.0]},
+        ],
+        "hazards": [
+            {"center": [2.5, -2.6, 0.0], "radius": 0.9},
+            {"center": [-2.8, 1.1, 0.0], "radius": 1.0},
+            {"center": [2.1, 3.1, 0.0], "radius": 0.75},
+        ],
+        "difficulty": "hard",
     },
 ]
 

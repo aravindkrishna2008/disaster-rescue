@@ -1,0 +1,24 @@
+{
+  "id": "ppo_buried_detection_final",
+  "name": "ppo_buried_detection_final",
+  "model_path": "models/ppo_buried_detection_final.zip",
+  "total_steps": 500000,
+  "n_envs": 8,
+  "obs_dim": 21,
+  "max_steps_eval": 300,
+  "policy_network": "MLP 256 \u00d7 256",
+  "batch_size": 256,
+  "n_steps": 2048,
+  "gamma": 0.99,
+  "gae_lambda": 0.95,
+  "clip_range": 0.2,
+  "tensorboard_log": "tb_logs/PPO_8",
+  "git_commit": "ab047d6",
+  "exported_at": "2026-05-23T20:36:57.911122+00:00",
+  "checkpoints": [
+    "ppo_buried_detection_160000_steps.zip",
+    "ppo_buried_detection_320000_steps.zip",
+    "ppo_buried_detection_480000_steps.zip",
+    "ppo_buried_detection_final.zip"
+  ]
+}

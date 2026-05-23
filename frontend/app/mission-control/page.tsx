@@ -9,8 +9,23 @@ type Scene = {
   difficulty: string;
   robot_start: number[];
   survivor_pos: number[];
+  survivor?: SurvivorMeta;
   obstacle_count: number;
   hazard_count: number;
+};
+
+type SurvivorMeta = {
+  buried?: boolean;
+  cover?: string;
+  detection_radius?: number;
+  signal?: string;
+};
+
+type DetectionEvent = {
+  step: number;
+  robot_pos: number[];
+  signal?: string;
+  radius?: number;
 };
 
 type RunResult = {
@@ -22,6 +37,8 @@ type RunResult = {
   total_reward: number;
   gif_url: string;
   max_steps: number;
+  survivor?: SurvivorMeta;
+  detection_event?: DetectionEvent | null;
 };
 
 type RunState =
@@ -52,7 +69,7 @@ export default function MissionControlPage() {
         setScenes(data.scenes);
         setDefaultMaxSteps(data.default_max_steps);
         setMaxSteps(data.default_max_steps);
-        setNumEnvs(Math.min(6, data.scenes.length));
+        setNumEnvs(data.scenes.length);
       })
       .catch((e) => setBootError(e instanceof Error ? e.message : String(e)));
   }, []);
@@ -103,7 +120,7 @@ export default function MissionControlPage() {
         <div>
           <Link href="/" className="mc-back">← Back to overview</Link>
           <h1 className="mc-title">
-            Mission Control <span>— Six-Environment Rollout Suite</span>
+            Mission Control <span>— Multi-Environment Rollout Suite</span>
           </h1>
         </div>
         <div className="mc-controls">
@@ -182,6 +199,13 @@ export default function MissionControlPage() {
               <div className="mc-card-meta">
                 <span>start <b>({scene.robot_start.slice(0, 2).map((n) => n.toFixed(1)).join(', ')})</b></span>
                 <span>survivor <b>({scene.survivor_pos.slice(0, 2).map((n) => n.toFixed(1)).join(', ')})</b></span>
+                {scene.survivor?.buried && (
+                  <>
+                    <span>status <b>buried</b></span>
+                    <span>signal <b>{scene.survivor.signal ?? 'sensor'}</b></span>
+                    <span>detect radius <b>{(scene.survivor.detection_radius ?? 0).toFixed(1)}m</b></span>
+                  </>
+                )}
                 <span>obstacles <b>{scene.obstacle_count}</b></span>
                 <span>hazards <b>{scene.hazard_count}</b></span>
               </div>
@@ -208,8 +232,20 @@ export default function MissionControlPage() {
                       <span className={state.result.reached ? 'ok' : 'fail'}>
                         {state.result.reached ? 'REACHED' : 'TIMEOUT'}
                       </span>
+                      {state.result.survivor?.buried && (
+                        <span className={state.result.detection_event ? 'ok' : 'fail'}>
+                          {state.result.detection_event
+                            ? `DETECTED step ${state.result.detection_event.step}`
+                            : 'NOT DETECTED'}
+                        </span>
+                      )}
                       <span>steps <b>{state.result.steps}</b>/{state.result.max_steps}</span>
                       <span>reward <b>{state.result.total_reward.toFixed(1)}</b></span>
+                      {state.result.detection_event && (
+                        <span>
+                          ping <b>({state.result.detection_event.robot_pos.slice(0, 2).map((n) => n.toFixed(1)).join(', ')})</b>
+                        </span>
+                      )}
                     </>
                   ) : (
                     <span className="dim">budget {maxSteps}</span>
