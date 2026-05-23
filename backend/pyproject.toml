@@ -7,9 +7,11 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.1",
     "google>=3.0.0",
+    "google-genai>=2.6.0",
     "google-generativeai>=0.8.6",
     "gymnasium[mujoco]>=0.29.1",
     "imageio[ffmpeg]>=2.37.3",
+    "pytest>=9.0.3",
     "rich>=15.0.0",
     "stable-baselines3==2.3.2",
     "tensorboard>=2.20.0",
