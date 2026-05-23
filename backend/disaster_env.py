@@ -102,6 +102,37 @@ G1_MODEL_PATH = (
     / "unitree_g1"
     / "g1.xml"
 )
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCENE_ASSET_ROOT = REPO_ROOT / "assets" / "3d"
+FACTORY_MESH_ROOT = SCENE_ASSET_ROOT / "kenney_factory-kit" / "Models" / "OBJ format"
+DUNGEON_MESH_ROOT = SCENE_ASSET_ROOT / "kenney_modular-dungeon-kit" / "Models" / "OBJ format"
+
+SCENE_MESH_ASSETS = {
+    "factory_box_large": FACTORY_MESH_ROOT / "box-large.obj",
+    "factory_box_wide": FACTORY_MESH_ROOT / "box-wide.obj",
+    "factory_cone": FACTORY_MESH_ROOT / "cone.obj",
+    "factory_conveyor_long": FACTORY_MESH_ROOT / "conveyor-long.obj",
+    "factory_crane": FACTORY_MESH_ROOT / "crane.obj",
+    "factory_machine": FACTORY_MESH_ROOT / "machine.obj",
+    "factory_screen_panel_wide": FACTORY_MESH_ROOT / "screen-panel-wide.obj",
+    "dungeon_gate_metal_bars": DUNGEON_MESH_ROOT / "gate-metal-bars.obj",
+    "dungeon_stairs": DUNGEON_MESH_ROOT / "stairs.obj",
+    "dungeon_floor_layer_raised": DUNGEON_MESH_ROOT / "template-floor-layer-raised.obj",
+    "dungeon_wall": DUNGEON_MESH_ROOT / "template-wall.obj",
+}
+SCENE_MESH_SCALES = {
+    "factory_box_large": "1.0 1.0 1.0",
+    "factory_box_wide": "1.15 1.0 1.1",
+    "factory_cone": "1.2 1.2 1.2",
+    "factory_conveyor_long": "1.0 1.0 1.0",
+    "factory_crane": "0.85 0.85 0.85",
+    "factory_machine": "1.0 1.0 1.0",
+    "factory_screen_panel_wide": "1.2 1.2 1.2",
+    "dungeon_gate_metal_bars": "0.45 0.45 0.45",
+    "dungeon_stairs": "0.22 0.22 0.22",
+    "dungeon_floor_layer_raised": "0.18 0.18 0.18",
+    "dungeon_wall": "0.45 0.45 0.45",
+}
 
 CONTROLLED_ACTUATORS = (
     "left_hip_pitch_joint",
@@ -300,7 +331,130 @@ def _norm_or_zero(vec: np.ndarray) -> np.ndarray:
     return vec / norm
 
 
-def _add_scene_context(worldbody: ET.Element, scene: dict) -> None:
+def _add_scene_asset_meshes(asset: ET.Element) -> set[str]:
+    loaded: set[str] = set()
+    for name, path in SCENE_MESH_ASSETS.items():
+        if not path.exists():
+            continue
+        ET.SubElement(
+            asset,
+            "mesh",
+            {
+                "name": name,
+                "file": str(path),
+                "scale": SCENE_MESH_SCALES.get(name, "1 1 1"),
+            },
+        )
+        loaded.add(name)
+    return loaded
+
+
+def _mesh_geom(
+    worldbody: ET.Element,
+    *,
+    name: str,
+    mesh: str,
+    pos: list[float],
+    rgba: str,
+    euler: list[float] | None = None,
+) -> None:
+    attrs = {
+        "name": name,
+        "type": "mesh",
+        "mesh": mesh,
+        "pos": _fmt_vec(pos),
+        "rgba": rgba,
+        "contype": "0",
+        "conaffinity": "0",
+    }
+    if euler is not None:
+        attrs["euler"] = _fmt_vec(euler)
+    ET.SubElement(worldbody, "geom", attrs)
+
+
+def _add_decorative_scene_assets(
+    worldbody: ET.Element,
+    scene: dict,
+    loaded_meshes: set[str],
+) -> None:
+    y_up_to_z_up = [1.5708, 0.0, 0.0]
+    obstacle_mesh_cycle = [
+        "factory_box_large",
+        "factory_box_wide",
+        "factory_conveyor_long",
+        "factory_machine",
+    ]
+
+    for i, obstacle in enumerate(scene.get("obstacles", DEFAULT_SCENE["obstacles"])[:OBSTACLE_COUNT]):
+        mesh = obstacle_mesh_cycle[i % len(obstacle_mesh_cycle)]
+        if mesh not in loaded_meshes:
+            continue
+        pos = _vec3(obstacle.get("pos", [0.0, 0.0, 1.0]), default_z=1.0)
+        size = list(obstacle.get("size", [0.5, 0.5, 1.0]))
+        if len(size) == 2:
+            size.append(1.0)
+        _mesh_geom(
+            worldbody,
+            name=f"scene_asset_obstacle_{i}",
+            mesh=mesh,
+            pos=[pos[0], pos[1], 0.02],
+            rgba="0.70 0.62 0.50 1.0",
+            euler=y_up_to_z_up,
+        )
+
+    for i, terrain in enumerate(_terrain_context_geoms(scene)[:TERRAIN_COUNT]):
+        if "dungeon_floor_layer_raised" not in loaded_meshes:
+            break
+        pos = _vec3(terrain.get("pos", [0.0, 0.0, 0.03]), default_z=0.03)
+        size = list(terrain.get("size", [0.6, 0.6, 0.03]))
+        if len(size) == 2:
+            size.append(0.03)
+        _mesh_geom(
+            worldbody,
+            name=f"scene_asset_terrain_{i}",
+            mesh="dungeon_floor_layer_raised",
+            pos=[pos[0], pos[1], max(pos[2] * 2.0, 0.02)],
+            rgba=terrain.get("asset_rgba", "0.42 0.44 0.40 1.0"),
+            euler=y_up_to_z_up,
+        )
+
+    perimeter_assets = [
+        ("factory_crane", "scene_asset_crane", [-6.8, 6.1, 0.02], "0.95 0.72 0.22 1.0", 0.0),
+        ("factory_screen_panel_wide", "scene_asset_screen", [6.1, -5.8, 0.02], "0.30 0.52 0.72 1.0", -0.7),
+        ("dungeon_gate_metal_bars", "scene_asset_gate", [6.9, 4.9, 0.02], "0.50 0.52 0.55 1.0", 1.5708),
+        ("dungeon_wall", "scene_asset_wall", [-6.7, -0.5, 0.02], "0.58 0.55 0.50 1.0", -1.5708),
+        ("dungeon_stairs", "scene_asset_stairs", [5.9, 1.9, 0.02], "0.50 0.48 0.44 1.0", -0.35),
+    ]
+    for mesh, name, pos, rgba, yaw in perimeter_assets:
+        if mesh not in loaded_meshes:
+            continue
+        _mesh_geom(
+            worldbody,
+            name=name,
+            mesh=mesh,
+            pos=pos,
+            rgba=rgba,
+            euler=[1.5708, 0.0, yaw],
+        )
+
+    cone_positions = [(-5.4, -5.9), (-4.6, -5.5), (4.9, 4.9), (5.6, 4.3)]
+    if "factory_cone" in loaded_meshes:
+        for i, (x, y) in enumerate(cone_positions):
+            _mesh_geom(
+                worldbody,
+                name=f"scene_asset_cone_{i}",
+                mesh="factory_cone",
+                pos=[x, y, 0.02],
+                rgba="1.0 0.42 0.08 1.0",
+                euler=y_up_to_z_up,
+            )
+
+
+def _add_scene_context(
+    worldbody: ET.Element,
+    scene: dict,
+    loaded_meshes: set[str],
+) -> None:
     for i, terrain in enumerate(_terrain_context_geoms(scene)[:TERRAIN_COUNT]):
         pos = _vec3(terrain.get("pos", [0.0, 0.0, 0.03]), default_z=0.03)
         size = list(terrain.get("size", [0.6, 0.6, 0.03]))
@@ -340,6 +494,8 @@ def _add_scene_context(worldbody: ET.Element, scene: dict) -> None:
             },
         )
 
+    _add_decorative_scene_assets(worldbody, scene, loaded_meshes)
+
     for i, hazard in enumerate(scene.get("hazards", DEFAULT_SCENE["hazards"])):
         center = _vec3(hazard.get("center", [0.0, 0.0, 0.0]), default_z=0.0)
         radius = float(hazard.get("radius", 1.0))
@@ -362,6 +518,13 @@ def _terrain_context_geoms(scene: dict) -> list[dict]:
     terrain = scene.get("terrain", [])
     if isinstance(terrain, list):
         return terrain
+    if isinstance(terrain, dict):
+        patches = terrain.get("patches", [])
+        if isinstance(patches, list):
+            return patches
+    patches = scene.get("terrain_patches", [])
+    if isinstance(patches, list):
+        return patches
     return scene.get("terrain_geoms", [])
 
 
@@ -424,6 +587,7 @@ def _build_xml(scene: dict) -> str:
         mesh_file = mesh.get("file")
         if mesh_file:
             mesh.set("file", str(asset_dir / mesh_file))
+    loaded_scene_meshes = _add_scene_asset_meshes(asset)
 
     ET.SubElement(
         asset,
@@ -500,7 +664,7 @@ def _build_xml(scene: dict) -> str:
         for geom in terrain_root:
             worldbody.insert(1, geom)
 
-    _add_scene_context(worldbody, scene)
+    _add_scene_context(worldbody, scene, loaded_scene_meshes)
 
     pelvis = worldbody.find("body[@name='pelvis']")
     if pelvis is None:
