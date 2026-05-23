@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "backend"))
 
 from disaster_env import DisasterEnv
 from scenario_agent import ScenarioAgent, SurvivorProfile
