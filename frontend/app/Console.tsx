@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ThreeArena from './ThreeArena';
 
 type TargetName = 'CHILD' | 'ADULT';
 
@@ -8,6 +9,18 @@ const SURVIVORS: Record<TargetName, { x: number; y: number }> = {
   CHILD: { x: 3.2, y: -1.5 },
   ADULT: { x: -2.1, y: 4.3 },
 };
+
+const OBSTACLES = [
+  { pos: [0.0, 0.0, 1.0], size: [0.5, 0.5, 1.0] },
+  { pos: [2.0, -2.0, 0.75], size: [0.4, 0.4, 0.75] },
+  { pos: [-2.0, 2.0, 1.25], size: [0.4, 0.4, 1.25] },
+];
+
+const HAZARDS = [
+  { center: [1.0, 1.0, 0.0], radius: 1.2 },
+  { center: [-1.5, -1.0, 0.0], radius: 0.9 },
+];
+
 const BUDGET = 150;
 
 type CommsKind = 'sys' | 'bot';
@@ -39,6 +52,42 @@ const epClock = (sec: number) => {
 };
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+
+function generateMockTrajectory(target: TargetName): number[][] {
+  const start = [-4.0, -4.0];
+  const childWaypoints = [
+    start,
+    [-1.5, -3.8],
+    [1.0, -3.5], // skirt obstacle 2
+    [2.8, -3.0],
+    [3.2, -1.5]
+  ];
+  const adultWaypoints = [
+    start,
+    [-3.8, -1.0],
+    [-3.8, 2.0], // skirt obstacle 3
+    [-3.0, 3.5],
+    [-2.1, 4.3]
+  ];
+  const waypoints = target === 'CHILD' ? childWaypoints : adultWaypoints;
+  
+  const trajectory: number[][] = [];
+  const stepsPerSegment = Math.floor(120 / (waypoints.length - 1));
+  
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const p1 = waypoints[i];
+    const p2 = waypoints[i + 1];
+    for (let s = 0; s < stepsPerSegment; s++) {
+      const t = s / stepsPerSegment;
+      const x = p1[0] + (p2[0] - p1[0]) * t;
+      const y = p1[1] + (p2[1] - p1[1]) * t;
+      const sway = Math.sin(t * Math.PI) * 0.05;
+      trajectory.push([x + sway, y - sway, 0.0]);
+    }
+  }
+  trajectory.push([waypoints[waypoints.length - 1][0], waypoints[waypoints.length - 1][1], 0.0]);
+  return trajectory;
+}
 
 function parseOrder(text: string): { target: TargetName; why: string } {
   const t = text.toLowerCase();
@@ -72,7 +121,8 @@ export default function Console() {
   const [stateText, setStateText] = useState('EPISODE IDLE');
   const [simSteps, setSimSteps] = useState(0);
   const [distance, setDistance] = useState<number | undefined>(undefined);
-  const [robot, setRobot] = useState({ x: 0, y: 0, heading: 0 });
+  const [robot, setRobot] = useState({ x: -4.0, y: -4.0, heading: 0 });
+  const [activeTrajectory, setActiveTrajectory] = useState<number[][] | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [comms, setComms] = useState<CommsLine[]>([]);
   const [clockUtc, setClockUtc] = useState('--:--:--');
@@ -92,7 +142,7 @@ export default function Console() {
   const dispatchingRef = useRef(false);
   const simStepsRef = useRef(0);
   const activeTargetRef = useRef<TargetName | null>(null);
-  const robotRef = useRef({ x: 0, y: 0, heading: 0 });
+  const robotRef = useRef({ x: -4.0, y: -4.0, heading: 0 });
   const lastOutcomeRef = useRef<LastOutcome>(null);
   const lineIdRef = useRef(0);
   const commsScrollRef = useRef<HTMLDivElement | null>(null);
@@ -192,64 +242,70 @@ export default function Console() {
   }, []);
 
   const startAnimation = useCallback(
-    (targetName: TargetName) => {
-      const tgt = SURVIVORS[targetName];
-      const totalDist = Math.hypot(tgt.x, tgt.y);
-      const stepMs = 100;
-      let logged25 = false;
-      let logged75 = false;
-      let loggedClose = false;
-      let localStep = 0;
+    (targetName: TargetName, traj: number[][], onFinish: (finalDist: number) => void) => {
+      stopAnimation();
+      setActiveTrajectory(traj);
+      let stepIdx = 0;
+      const stepMs = Math.max(30, Math.min(85, 6000 / traj.length));
 
       const tick = () => {
         if (!dispatchingRef.current) return;
-        localStep++;
-        simStepsRef.current = localStep;
+        if (stepIdx >= traj.length) {
+          const tgt = SURVIVORS[targetName];
+          const finalPos = traj[traj.length - 1];
+          const finalDist = Math.hypot(tgt.x - finalPos[0], tgt.y - finalPos[1]);
+          onFinish(finalDist);
+          return;
+        }
 
-        const phase = localStep % (BUDGET + 20);
-        const p = Math.min(1, phase / Math.max(1, Math.ceil(totalDist * 22)));
-        const sway = Math.sin(p * Math.PI) * 0.25;
-        const perpX = -tgt.y / totalDist;
-        const perpY = tgt.x / totalDist;
-        const rx = tgt.x * p + perpX * sway;
-        const ry = tgt.y * p + perpY * sway;
-        const dx = tgt.x - rx;
-        const dy = tgt.y - ry;
-        const heading = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
-        const dist = Math.hypot(dx, dy);
+        const currentPt = traj[stepIdx];
+        const nextPt = traj[Math.min(stepIdx + 1, traj.length - 1)];
+
+        const rx = currentPt[0];
+        const ry = currentPt[1];
+        
+        let heading = robotRef.current.heading;
+        const dx = nextPt[0] - rx;
+        const dy = nextPt[1] - ry;
+        if (Math.hypot(dx, dy) > 0.01) {
+          heading = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+        }
 
         robotRef.current = { x: rx, y: ry, heading };
         setRobot(robotRef.current);
-        setSimSteps(localStep);
+        
+        const currentStep = stepIdx + 1;
+        simStepsRef.current = currentStep;
+        setSimSteps(currentStep);
+
+        const tgt = SURVIVORS[targetName];
+        const dist = Math.hypot(tgt.x - rx, tgt.y - ry);
         setDistance(dist);
 
-        if (!logged25 && p > 0.25) {
-          logged25 = true;
+        if (stepIdx === Math.floor(traj.length * 0.25)) {
           pushLine(
             'GR-ER&gt;',
-            `<span class="dim">progress   →</span> 25% · pose <span class="v">(${rx.toFixed(2)}, ${ry.toFixed(2)})</span> · clearance ok`,
+            `<span class="dim">progress   →</span> 25% · pose <span class="v">(${rx.toFixed(2)}, ${ry.toFixed(2)})</span> · clearance ok`
           );
-        }
-        if (!logged75 && p > 0.6) {
-          logged75 = true;
+        } else if (stepIdx === Math.floor(traj.length * 0.6)) {
           pushLine(
             'GR-ER&gt;',
-            `<span class="dim">obstacle   →</span> debris at <span class="v">(1.4, −0.6)</span> · skirting left · cost +<span class="v">3</span> cells`,
+            `<span class="dim">obstacle   →</span> skirting obstacle sector · distance to target <span class="v">${dist.toFixed(2)}m</span>`
           );
-        }
-        if (!loggedClose && p > 0.88) {
-          loggedClose = true;
+        } else if (stepIdx === Math.floor(traj.length * 0.88)) {
           pushLine(
             'GR-ER&gt;',
-            `<span class="dim">approach   →</span> &lt; <span class="v">0.6m</span> · reducing speed · arm stabilizer`,
+            `<span class="dim">approach   →</span> &lt; <span class="v">1.0m</span> · reducing speed · arm stabilizer`
           );
         }
 
+        stepIdx++;
         animTimer.current = setTimeout(tick, stepMs);
       };
+
       animTimer.current = setTimeout(tick, stepMs);
     },
-    [pushLine],
+    [pushLine, stopAnimation],
   );
 
   const callBackend = useCallback(
@@ -343,40 +399,52 @@ export default function Console() {
       setDispatching(true);
       simStepsRef.current = 0;
       setSimSteps(0);
-      robotRef.current = { x: 0, y: 0, heading: 0 };
+      robotRef.current = { x: -4.0, y: -4.0, heading: 0 };
       setRobot(robotRef.current);
       t0Ref.current = performance.now();
       setElapsed(0);
       setStateKind('is-running');
       setStateText('EPISODE RUNNING');
 
-      startAnimation(localParse.target);
-
       const data = await callBackend(orderText);
-      stopAnimation();
+      
+      let finalTarget = localParse.target;
+      let finalTrajectory: number[][] = [];
+      let reached = false;
+      let steps = 0;
 
       if (data) {
-        const geminiTarget = (data.target_id ? String(data.target_id).toUpperCase() : localParse.target) as TargetName;
-        if (geminiTarget !== activeTargetRef.current) {
-          setActiveTarget(geminiTarget);
-          activeTargetRef.current = geminiTarget;
+        finalTarget = (data.target_id ? String(data.target_id).toUpperCase() : localParse.target) as TargetName;
+        if (finalTarget !== activeTargetRef.current) {
+          setActiveTarget(finalTarget);
+          activeTargetRef.current = finalTarget;
           pushLine(
             'GR-ER&gt;',
-            `<span class="dim">correction →</span> Gemini selected <span class="v">${geminiTarget}</span> · heuristic overridden`,
+            `<span class="dim">correction →</span> Gemini selected <span class="v">${finalTarget}</span> · heuristic overridden`,
           );
         }
         if (data.reason) {
           pushLine(
             'GR-ER&gt;',
-            `<span class="dim">reasoning  →</span> <span class="v">${geminiTarget}</span> · ${escapeHtml(String(data.reason))}`,
+            `<span class="dim">reasoning  →</span> <span class="v">${finalTarget}</span> · ${escapeHtml(String(data.reason))}`,
           );
         }
-        finishEpisode(!!data.reached, data.steps || simStepsRef.current, undefined);
-      } else {
-        finishEpisode(simStepsRef.current < BUDGET, simStepsRef.current, undefined);
+        reached = !!data.reached;
+        steps = data.steps || 0;
+        finalTrajectory = data.trajectory || [];
       }
+
+      if (finalTrajectory.length === 0) {
+        finalTrajectory = generateMockTrajectory(finalTarget);
+        reached = true;
+        steps = finalTrajectory.length;
+      }
+
+      startAnimation(finalTarget, finalTrajectory, (finalDist) => {
+        finishEpisode(reached, steps, finalDist);
+      });
     },
-    [callBackend, epCounter, finishEpisode, pushLine, startAnimation, stopAnimation],
+    [callBackend, epCounter, finishEpisode, pushLine, startAnimation],
   );
 
   const reset = useCallback(() => {
@@ -385,8 +453,9 @@ export default function Console() {
     setDispatching(false);
     simStepsRef.current = 0;
     setSimSteps(0);
-    robotRef.current = { x: 0, y: 0, heading: 0 };
+    robotRef.current = { x: -4.0, y: -4.0, heading: 0 };
     setRobot(robotRef.current);
+    setActiveTrajectory(null);
     lastOutcomeRef.current = null;
     setActiveTarget(null);
     activeTargetRef.current = null;
@@ -402,7 +471,7 @@ export default function Console() {
       steps: '—',
       time: '—',
     });
-    pushLine('SYS  &gt;', '<span class="dim">episode state cleared · pose returned to origin</span>', 'sys');
+    pushLine('SYS  &gt;', '<span class="dim">episode state cleared · pose returned to start [-4.0, -4.0]</span>', 'sys');
     pushAwait('awaiting next order');
   }, [pushAwait, pushLine, stopAnimation]);
 
@@ -595,8 +664,31 @@ export default function Console() {
           </div>
         </div>
 
+        {/* CENTER */}
+        <div className="col center-col" style={{ borderLeft: '1px solid var(--rule)' }}>
+          <div className="panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 22px' }}>
+            <div className="panel-hd">
+              <h2>
+                Tactical Visualizer <span className="tag">— 3D ground telemetry</span>
+              </h2>
+              <span className="idx mono">[ 03 / WebGL ]</span>
+            </div>
+            <div style={{ flex: 1, position: 'relative', width: '100%', minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
+              <ThreeArena
+                robotPos={robot}
+                robotHeading={robot.heading}
+                activeTarget={activeTarget}
+                trajectory={activeTrajectory}
+                obstacles={OBSTACLES}
+                hazards={HAZARDS}
+                survivors={SURVIVORS}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* RIGHT */}
-        <div className="col">
+        <div className="col" style={{ borderLeft: '1px solid var(--rule)' }}>
           <div className="panel" style={{ padding: 0 }}>
             <div className={`target${activeTarget ? ' is-active' : ''}`}>
               <div className="target-flag"></div>
