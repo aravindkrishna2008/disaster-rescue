@@ -15,7 +15,8 @@ from scenario_agent import SceneSpec
 from scene_adapter import scene_spec_to_env_scene
 
 
-DEFAULT_SCENE_JSON = Path("tmp/generated_scene.json")
+PROJECT_ROOT = Path(__file__).resolve().parent
+DEFAULT_SCENE_JSON = PROJECT_ROOT / "tmp" / "generated_scene.json"
 
 
 def main() -> None:

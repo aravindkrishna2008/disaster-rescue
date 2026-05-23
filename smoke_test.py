@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "backend"))
 
 from disaster_env import DisasterEnv
+
 from scenario_agent import ScenarioAgent, SurvivorProfile
 from scene_adapter import scene_spec_to_env_scene
 
-TEMP_DIR = Path("tmp")
+PROJECT_ROOT = Path(__file__).resolve().parent
+TEMP_DIR = PROJECT_ROOT / "tmp"
 
 
 def main() -> None:
@@ -29,7 +31,7 @@ def main() -> None:
     parser.add_argument(
         "--save-preview",
         action="store_true",
-        help="Also write the generated scene JSON and HTML preview for debugging.",
+        help="Also write an HTML preview for debugging. Scene JSON is always updated.",
     )
     parser.add_argument(
         "--mock",
@@ -41,18 +43,29 @@ def main() -> None:
     TEMP_DIR.mkdir(exist_ok=True)
 
     if args.mock:
-        from scenario_agent import SceneSpec, PlacedAsset, HazardZone, SurvivorLocation, ASSET_CATALOG
+        from scenario_agent import (
+            ASSET_CATALOG,
+            HazardZone,
+            PlacedAsset,
+            SceneSpec,
+            SurvivorLocation,
+        )
+
         scene = SceneSpec(
             description="Mock collapsed building",
             difficulty="easy",
             robot_start=(1.5, 1.5, 0.0),
             survivors=[
                 SurvivorLocation(
-                    profile=SurvivorProfile(name="Maya", type="baby", priority="critical"),
+                    profile=SurvivorProfile(
+                        name="Maya", type="baby", priority="critical"
+                    ),
                     position=(4.0, 16.0, 0.0),
                 ),
                 SurvivorLocation(
-                    profile=SurvivorProfile(name="Luis", type="adult", priority="medium"),
+                    profile=SurvivorProfile(
+                        name="Luis", type="adult", priority="medium"
+                    ),
                     position=(18.0, 18.0, 0.0),
                 ),
             ],
@@ -85,7 +98,7 @@ def main() -> None:
                 SurvivorProfile(name="Maya", type="baby", priority="critical"),
                 SurvivorProfile(name="Luis", type="adult", priority="medium"),
             ],
-            difficulty="easy",
+            difficulty="medium",
             debug=args.debug,
             timeout=args.timeout,
         )
@@ -115,11 +128,11 @@ def main() -> None:
         f"dist={info['dist']:.3f}"
     )
 
-    if args.save_preview:
-        json_path = scene.save_json(TEMP_DIR / "generated_scene.json")
-        html_path = scene.save_preview_html(TEMP_DIR / "generated_scene.html")
+    json_path = scene.save_json(TEMP_DIR / "generated_scene.json")
+    print(f"Wrote scene JSON: {json_path}")
 
-        print(f"Wrote scene JSON: {json_path}")
+    if args.save_preview:
+        html_path = scene.save_preview_html(TEMP_DIR / "generated_scene.html")
         print(f"Wrote scene preview: {html_path}")
 
 

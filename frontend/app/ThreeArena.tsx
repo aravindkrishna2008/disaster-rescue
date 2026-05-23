@@ -5,13 +5,25 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 interface Obstacle {
+  asset_id?: string;
   pos: number[];
   size: number[];
+  color?: string;
 }
 
 interface Hazard {
+  type?: string;
   center: number[];
   radius: number;
+  color?: string;
+}
+
+interface Terrain {
+  grid_size: number;
+  heights: number[][];
+  roughness?: number[][];
+  danger?: number[][];
+  rigid?: number[][];
 }
 
 interface ThreeArenaProps {
@@ -21,10 +33,34 @@ interface ThreeArenaProps {
   trajectory: number[][] | null;
   obstacles: Obstacle[];
   hazards: Hazard[];
+  terrain?: Terrain | null;
   survivors: {
     CHILD: { x: number; y: number };
     ADULT: { x: number; y: number };
   };
+}
+
+function obstacleColor(assetId: string | undefined, index: number) {
+  const palette: Record<string, string> = {
+    rubble_pile_small: '#7b6f61',
+    rubble_pile_large: '#6d6258',
+    concrete_slab: '#8e9294',
+    steel_beam: '#5f6870',
+    collapsed_wall: '#9a9387',
+    standing_wall: '#a89f93',
+  };
+  const fallback = ['#8e9294', '#5f6870', '#7b6f61', '#a89f93', '#6d6258'];
+  return assetId && palette[assetId] ? palette[assetId] : fallback[index % fallback.length];
+}
+
+function hazardColor(type: string | undefined) {
+  const palette: Record<string, string> = {
+    fire: '#ef3b2d',
+    gas: '#2fbf71',
+    flood: '#2f80ed',
+    unstable_floor: '#f2b705',
+  };
+  return type && palette[type] ? palette[type] : '#b02e26';
 }
 
 export default function ThreeArena({
@@ -34,6 +70,7 @@ export default function ThreeArena({
   trajectory,
   obstacles,
   hazards,
+  terrain,
   survivors,
 }: ThreeArenaProps) {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -105,7 +142,7 @@ export default function ThreeArena({
     pointLight.position.set(0, -2, 0);
     scene.add(pointLight);
 
-    // 6. Ground Grid (Tactical Paper style)
+    // 6. Ground Grid + procedural terrain
     const gridHelper = new THREE.GridHelper(20, 20, '#14110e', '#c2bbac');
     gridHelper.position.y = -0.01; // Slightly below floor to prevent z-fighting
     scene.add(gridHelper);
@@ -120,19 +157,53 @@ export default function ThreeArena({
     border.position.y = -0.025;
     scene.add(border);
 
+    if (terrain?.heights?.length) {
+      const gridSize = terrain.grid_size || terrain.heights.length;
+      const cell = 16 / gridSize;
+      const half = cell / 2;
+      const terrainGroup = new THREE.Group();
+      terrainGroup.name = 'procedural-terrain';
+
+      for (let row = 0; row < gridSize; row += 1) {
+        for (let col = 0; col < gridSize; col += 1) {
+          const heightValue = terrain.heights[row]?.[col] ?? 0;
+          const roughness = terrain.roughness?.[row]?.[col] ?? 0;
+          const danger = terrain.danger?.[row]?.[col] ?? 0;
+          const rigid = terrain.rigid?.[row]?.[col] ?? 0;
+          if (heightValue <= 0.01 && roughness <= 0.05 && danger <= 0 && rigid <= 0) continue;
+
+          const slabBoost = rigid > 0 ? 0.08 : 0;
+          const heightY = Math.max(0.012, heightValue + slabBoost);
+          const color = danger > 0.7
+            ? '#c93d2d'
+            : rigid > 0
+              ? '#8b949e'
+              : roughness > 0.85
+                ? '#8a7a52'
+                : '#6f8a67';
+          const geom = new THREE.BoxGeometry(cell * 0.96, heightY, cell * 0.96);
+          const mat = new THREE.MeshStandardMaterial({
+            color,
+            transparent: true,
+            opacity: danger > 0 ? 0.76 : 0.62,
+            roughness: 0.8,
+            metalness: 0,
+          });
+          const tile = new THREE.Mesh(geom, mat);
+          tile.position.set(
+            -8 + half + col * cell,
+            heightY / 2 - 0.012,
+            -(-8 + half + row * cell),
+          );
+          tile.receiveShadow = true;
+          terrainGroup.add(tile);
+        }
+      }
+      scene.add(terrainGroup);
+    }
+
     // 7. Add Obstacles (from DEFAULT_SCENE)
     const obstacleGeometries: THREE.BoxGeometry[] = [];
-    const obstacleMaterial = new THREE.MeshStandardMaterial({
-      color: '#b02e26', // matches --red
-      transparent: true,
-      opacity: 0.18,
-      roughness: 0.2,
-      metalness: 0.1,
-    });
-    const obstacleWireframeMaterial = new THREE.MeshBasicMaterial({
-      color: '#b02e26',
-      wireframe: true,
-    });
 
     obstacles.forEach((obs, idx) => {
       // MuJoCo size is half-extents. Three.js BoxGeometry is full sizes.
@@ -142,6 +213,14 @@ export default function ThreeArena({
       
       const geom = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
       obstacleGeometries.push(geom);
+      const color = obs.color ?? obstacleColor(obs.asset_id, idx);
+      const obstacleMaterial = new THREE.MeshStandardMaterial({
+        color,
+        transparent: true,
+        opacity: 0.48,
+        roughness: 0.45,
+        metalness: obs.asset_id === 'steel_beam' ? 0.35 : 0.08,
+      });
 
       const mesh = new THREE.Mesh(geom, obstacleMaterial);
       // Position: MuJoCo: [x, y, z] -> Three.js: [x, z_mujoco, -y_mujoco]
@@ -151,6 +230,10 @@ export default function ThreeArena({
       scene.add(mesh);
 
       // Add wireframe outline
+      const obstacleWireframeMaterial = new THREE.MeshBasicMaterial({
+        color,
+        wireframe: true,
+      });
       const wireframe = new THREE.Mesh(geom, obstacleWireframeMaterial);
       wireframe.position.copy(mesh.position);
       scene.add(wireframe);
@@ -159,10 +242,11 @@ export default function ThreeArena({
     // 8. Add Hazard Zones (circles on the floor)
     hazards.forEach((hazard) => {
       const radius = hazard.radius;
+      const color = hazard.color ?? hazardColor(hazard.type);
       // We can use a RingGeometry or a TorusGeometry lying flat on the floor
       const torusGeom = new THREE.TorusGeometry(radius, 0.04, 8, 48);
       const torusMat = new THREE.MeshBasicMaterial({
-        color: '#b02e26',
+        color,
         transparent: true,
         opacity: 0.5,
       });
@@ -174,9 +258,9 @@ export default function ThreeArena({
       // Radial pattern inside
       const discGeom = new THREE.RingGeometry(0, radius, 32);
       const discMat = new THREE.MeshBasicMaterial({
-        color: '#b02e26',
+        color,
         transparent: true,
-        opacity: 0.05,
+        opacity: 0.09,
         side: THREE.DoubleSide,
       });
       const disc = new THREE.Mesh(discGeom, discMat);
@@ -347,14 +431,14 @@ export default function ThreeArena({
         }
         if (object.material) {
           if (Array.isArray(object.material)) {
-            object.material.forEach((mat) => mat.dispose());
+            object.material.forEach((mat: THREE.Material) => mat.dispose());
           } else {
             object.material.dispose();
           }
         }
       });
     };
-  }, [obstacles, hazards, survivors]);
+  }, [obstacles, hazards, terrain, survivors]);
 
   // Update robot position & heading
   useEffect(() => {

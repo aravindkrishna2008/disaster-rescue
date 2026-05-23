@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from scenario_agent import (
     ASSET_CATALOG,
@@ -21,6 +22,7 @@ from scenario_agent import (
     SurvivorProfile,
     extract_json_object,
     nearest_rubble_distance,
+    parse_scene_response,
     repair_scene,
 )
 
@@ -96,6 +98,15 @@ def test_extract_json_object_handles_markdown_fences() -> None:
     payload = extract_json_object(f"```json\n{make_scene_json()}\n```")
 
     assert json.loads(payload)["description"] == "earthquake collapse"
+
+
+def test_parse_scene_response_repairs_zero_hazard_height() -> None:
+    payload = json.loads(make_scene_json())
+    payload["hazards"][0]["height"] = 0.0
+
+    scene = parse_scene_response(json.dumps(payload))
+
+    assert scene.hazards[0].height == 0.05
 
 
 def test_generate_scene_accepts_assets_without_sizes() -> None:

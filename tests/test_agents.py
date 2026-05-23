@@ -6,139 +6,126 @@ from typing import Any
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from agents import DEFAULT_BASE_AGENT, DEFAULT_SMOKE_TEST_MODEL, Agent, ManagedAgent
+import agents
+from agents import DEFAULT_MODEL, DEFAULT_SMOKE_TEST_MODEL, Agent, ManagedAgent
 
 
-class FakeAgentsClient:
+class FakePart:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class FakeContent:
+    def __init__(self, text: str) -> None:
+        self.parts = [FakePart(text)]
+
+
+class FakeEvent:
+    def __init__(self, text: str, final: bool = True) -> None:
+        self.content = FakeContent(text)
+        self._final = final
+
+    def is_final_response(self) -> bool:
+        return self._final
+
+
+class FakeRunner:
     def __init__(self) -> None:
-        self.created_kwargs: dict[str, Any] | None = None
-        self.fetched_id: str | None = None
+        self.calls: list[dict[str, Any]] = []
 
-    def create(self, **kwargs: Any) -> dict[str, Any]:
-        self.created_kwargs = kwargs
-        return {"id": kwargs["id"], "created": True}
-
-    def get(self, agent_id: str) -> dict[str, Any]:
-        self.fetched_id = agent_id
-        return {"id": agent_id, "created": False}
+    async def run_async(self, **kwargs: Any):
+        self.calls.append(kwargs)
+        yield FakeEvent("ignored", final=False)
+        yield FakeEvent("managed-agent-ok")
 
 
-class ConflictAgentsClient(FakeAgentsClient):
-    def create(self, **kwargs: Any) -> dict[str, Any]:
-        self.created_kwargs = kwargs
-        raise RuntimeError("409 Requested entity already exists")
-
-
-class FakeInteractionsClient:
+class FakeSessionService:
     def __init__(self) -> None:
-        self.created_kwargs: dict[str, Any] | None = None
+        self.created: list[dict[str, str]] = []
+        self.sessions: set[tuple[str, str, str]] = set()
 
-    def create(self, **kwargs: Any) -> Any:
-        self.created_kwargs = kwargs
+    def get_session(self, app_name: str, user_id: str, session_id: str) -> object | None:
+        key = (app_name, user_id, session_id)
+        return object() if key in self.sessions else None
 
-        class Result:
-            output_text = "managed-agent-ok"
-
-        return Result()
-
-
-class FakeGenAIClient:
-    def __init__(self) -> None:
-        self.agents = FakeAgentsClient()
-        self.interactions = FakeInteractionsClient()
-
-
-class ConflictGenAIClient(FakeGenAIClient):
-    def __init__(self) -> None:
-        self.agents = ConflictAgentsClient()
-        self.interactions = FakeInteractionsClient()
+    def create_session(self, app_name: str, user_id: str, session_id: str) -> object:
+        self.created.append(
+            {"app_name": app_name, "user_id": user_id, "session_id": session_id}
+        )
+        self.sessions.add((app_name, user_id, session_id))
+        return object()
 
 
 def test_agent_alias_points_to_managed_agent() -> None:
     assert Agent is ManagedAgent
 
 
-def test_managed_agent_create_builds_expected_request() -> None:
-    fake_client = FakeGenAIClient()
+def test_managed_agent_defaults_to_flash_lite_model() -> None:
     agent = ManagedAgent(
         agent_id="verification-agent",
         system_prompt="You verify wiring.",
-        client=fake_client,
-        description="Verification agent",
     )
 
-    created = agent.create()
-
-    assert created == {"id": "verification-agent", "created": True}
-    assert fake_client.agents.created_kwargs == {
-        "id": "verification-agent",
-        "base_agent": DEFAULT_BASE_AGENT,
-        "system_instruction": "You verify wiring.",
-        "base_environment": {"type": "remote"},
-        "description": "Verification agent",
-    }
+    assert agent.base_agent == DEFAULT_MODEL
+    assert DEFAULT_SMOKE_TEST_MODEL == DEFAULT_MODEL
 
 
-def test_managed_agent_create_fetches_existing_agent_on_conflict() -> None:
-    fake_client = ConflictGenAIClient()
+def test_managed_agent_run_uses_adk_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agents, "configure_google_api_key", lambda: "key")
+    fake_runner = FakeRunner()
+    fake_sessions = FakeSessionService()
     agent = ManagedAgent(
         agent_id="verification-agent",
         system_prompt="You verify wiring.",
-        client=fake_client,
+        runner=fake_runner,
+        session_service=fake_sessions,
     )
+    agent._adk_agent = object()
 
-    created = agent.create()
-
-    assert created == {"id": "verification-agent", "created": False}
-    assert fake_client.agents.fetched_id == "verification-agent"
-
-
-def test_managed_agent_run_builds_expected_interaction_request() -> None:
-    fake_client = FakeGenAIClient()
-    agent = ManagedAgent(
-        agent_id="verification-agent",
-        system_prompt="You verify wiring.",
-        client=fake_client,
-    )
-
-    result = agent.run_text("Say ok", environment={"type": "remote"})
+    result = agent.run_text("Say ok", user_id="u1", session_id="s1")
 
     assert result == "managed-agent-ok"
-    assert fake_client.interactions.created_kwargs == {
-        "agent": "verification-agent",
-        "input": "Say ok",
-        "environment": {"type": "remote"},
-    }
+    assert fake_sessions.created == [
+        {"app_name": "verification-agent", "user_id": "u1", "session_id": "s1"}
+    ]
+    assert fake_runner.calls[0]["user_id"] == "u1"
+    assert fake_runner.calls[0]["session_id"] == "s1"
+    assert fake_runner.calls[0]["new_message"].parts[0].text == "Say ok"
 
 
-def test_managed_agent_raises_when_client_is_missing() -> None:
+def test_managed_agent_reuses_existing_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agents, "configure_google_api_key", lambda: "key")
+    fake_runner = FakeRunner()
+    fake_sessions = FakeSessionService()
+    fake_sessions.sessions.add(("verification-agent", "u1", "s1"))
     agent = ManagedAgent(
         agent_id="verification-agent",
         system_prompt="You verify wiring.",
-        client=FakeGenAIClient(),
+        runner=fake_runner,
+        session_service=fake_sessions,
     )
-    agent.client = None
+    agent._adk_agent = object()
 
-    with pytest.raises(RuntimeError, match="client was not initialized"):
-        agent.run_text("Say ok")
+    assert agent.run_text("Say ok", user_id="u1", session_id="s1") == "managed-agent-ok"
+    assert fake_sessions.created == []
 
 
-def test_managed_agent_loads_real_api_key_and_client_works() -> None:
-    import os
-    if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
-        pytest.skip("GEMINI_API_KEY or GOOGLE_API_KEY is not configured.")
-
+def test_managed_agent_raises_from_running_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agents, "configure_google_api_key", lambda: "key")
     agent = ManagedAgent(
-        agent_id="real-client-verification-agent",
-        system_prompt="You verify real client wiring.",
+        agent_id="verification-agent",
+        system_prompt="You verify wiring.",
+        runner=FakeRunner(),
+        session_service=FakeSessionService(),
     )
+    agent._adk_agent = object()
 
-    response = agent._client.models.generate_content(
-        model=DEFAULT_SMOKE_TEST_MODEL,
-        contents="Reply with only: ok",
-    )
+    async def call_run_text() -> None:
+        with pytest.raises(RuntimeError, match="running event loop"):
+            agent.run_text("Say ok")
 
-    assert response.text is not None
-    assert response.text.strip().lower() == "ok"
+    import asyncio
+
+    asyncio.run(call_run_text())

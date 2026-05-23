@@ -48,6 +48,8 @@ def scene_spec_to_env_scene(scene: SceneSpec) -> dict[str, Any]:
                 "asset_id": definition.asset_id,
                 "pos": [x, y, half_size[2]],
                 "size": half_size,
+                "color": definition.color,
+                "rgba": _hex_to_rgba(definition.color, alpha=0.86),
                 "rotation_yaw": float(asset.rotation_yaw),
                 "rotation_yaw_rad": radians(float(asset.rotation_yaw)),
             }
@@ -61,6 +63,8 @@ def scene_spec_to_env_scene(scene: SceneSpec) -> dict[str, Any]:
             "radius": float(hazard.radius) * ENV_SCALE,
             "height": float(hazard.height) * ENV_SCALE,
             "severity": hazard.severity,
+            "color": _hazard_color(hazard.type),
+            "rgba": _hex_to_rgba(_hazard_color(hazard.type), alpha=0.32),
         }
         for hazard in scene.hazards
     ]
@@ -115,3 +119,22 @@ def _terrain_seed(scene: SceneSpec) -> int:
     for char in text:
         seed = ((seed * 33) + ord(char)) & 0xFFFFFFFF
     return seed
+
+
+def _hazard_color(hazard_type: str) -> str:
+    return {
+        "fire": "#ef3b2d",
+        "gas": "#2fbf71",
+        "flood": "#2f80ed",
+        "unstable_floor": "#f2b705",
+    }.get(hazard_type, "#b02e26")
+
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    color = hex_color.lstrip("#")
+    if len(color) != 6:
+        return f"0.69 0.18 0.15 {alpha:.3f}"
+    red = int(color[0:2], 16) / 255.0
+    green = int(color[2:4], 16) / 255.0
+    blue = int(color[4:6], 16) / 255.0
+    return f"{red:.3f} {green:.3f} {blue:.3f} {alpha:.3f}"

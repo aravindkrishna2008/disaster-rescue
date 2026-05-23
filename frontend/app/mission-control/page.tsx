@@ -14,10 +14,18 @@ type Scene = {
   hazard_count: number;
   obstacles?: Obstacle[];
   hazards?: Hazard[];
+  terrain?: Terrain;
 };
 
-type Obstacle = { pos: number[]; size: number[] };
-type Hazard = { center: number[]; radius: number };
+type Obstacle = { pos: number[]; size: number[]; color?: string };
+type Hazard = { center: number[]; radius: number; type?: string; color?: string };
+type Terrain = {
+  grid_size: number;
+  heights: number[][];
+  roughness?: number[][];
+  danger?: number[][];
+  rigid?: number[][];
+};
 
 type SurvivorMeta = {
   buried?: boolean;
@@ -122,6 +130,28 @@ function RouteGraph({ scene, result }: { scene: Scene; result: RunResult }) {
     <div className="mc-route-graph">
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Route trace for ${scene.name}`}>
         <path d={`M ${width / 2} ${pad} V ${height - pad} M ${pad} ${height / 2} H ${width - pad}`} className="mc-route-grid" />
+        {scene.terrain?.heights?.map((row, rowIdx) =>
+          row.map((heightValue, colIdx) => {
+            const gridSize = scene.terrain?.grid_size || row.length;
+            const danger = scene.terrain?.danger?.[rowIdx]?.[colIdx] ?? 0;
+            const roughness = scene.terrain?.roughness?.[rowIdx]?.[colIdx] ?? 0;
+            if (heightValue <= 0.01 && roughness <= 0.05 && danger <= 0) return null;
+            const cellW = (width - pad * 2) / gridSize;
+            const cellH = (height - pad * 2) / gridSize;
+            const fill = danger > 0.7 ? '#c93d2d' : roughness > 0.85 ? '#8a7a52' : '#6f8a67';
+            return (
+              <rect
+                key={`terrain-${rowIdx}-${colIdx}`}
+                x={pad + colIdx * cellW}
+                y={pad + rowIdx * cellH}
+                width={cellW}
+                height={cellH}
+                fill={fill}
+                opacity={danger > 0 ? 0.22 : 0.13}
+              />
+            );
+          })
+        )}
         {(scene.hazards ?? []).map((hazard, idx) => (
           <circle
             key={`haz-${idx}`}
@@ -129,6 +159,7 @@ function RouteGraph({ scene, result }: { scene: Scene; result: RunResult }) {
             cy={scaleY(hazard.center[1])}
             r={(hazard.radius / (ARENA_HALF * 2)) * (width - pad * 2)}
             className="mc-route-hazard"
+            style={{ stroke: hazard.color, fill: hazard.color }}
           />
         ))}
         {(scene.obstacles ?? []).map((obstacle, idx) => (
@@ -139,6 +170,7 @@ function RouteGraph({ scene, result }: { scene: Scene; result: RunResult }) {
             width={(obstacle.size[0] / ARENA_HALF) * (width - pad * 2)}
             height={(obstacle.size[1] / ARENA_HALF) * (height - pad * 2)}
             className="mc-route-obstacle"
+            style={{ stroke: obstacle.color, fill: obstacle.color }}
           />
         ))}
         <polyline points={trace} className="mc-route-trace" />

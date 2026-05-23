@@ -8,10 +8,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agents import DEFAULT_BASE_AGENT, ManagedAgent
+from agents import DEFAULT_BASE_AGENT, DEFAULT_MODEL, ManagedAgent
 
 
-SCENARIO_MODEL = "gemini-3.5-flash"
+SCENARIO_MODEL = DEFAULT_MODEL
 SCENARIO_BASE_AGENT = DEFAULT_BASE_AGENT
 SCENE_WIDTH_METERS = 20.0
 SCENE_DEPTH_METERS = 20.0
@@ -354,6 +354,25 @@ def normalize_scene_payload(payload: dict[str, Any]) -> dict[str, Any]:
         normalized_asset.setdefault("size", definition.size)
         assets.append(normalized_asset)
     normalized["assets"] = assets
+
+    hazards = []
+    for index, hazard in enumerate(normalized.get("hazards", []) or []):
+        if not isinstance(hazard, dict):
+            hazards.append(hazard)
+            continue
+        normalized_hazard = dict(hazard)
+        normalized_hazard.setdefault("hazard_id", f"hazard-{index + 1}")
+        normalized_hazard.setdefault("type", "unstable_floor")
+        normalized_hazard.setdefault("center", (8.0, 8.0, 0.0))
+        normalized_hazard.setdefault("radius", 1.0)
+        normalized_hazard.setdefault("severity", "medium")
+        try:
+            height = float(normalized_hazard.get("height", 0.05))
+        except (TypeError, ValueError):
+            height = 0.05
+        normalized_hazard["height"] = height if height > 0 else 0.05
+        hazards.append(normalized_hazard)
+    normalized["hazards"] = hazards
     return normalized
 
 

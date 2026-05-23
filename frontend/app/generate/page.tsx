@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import ThreeArena from '../ThreeArena';
 
 type EvalResult = {
   score: number;
@@ -14,9 +15,28 @@ type EpisodeResult = {
   reached: boolean;
   steps: number;
   total_reward: number;
+  final_dist?: number | null;
+  gif_url?: string;
   gif_path?: string;
+  trajectory?: number[][];
   detection_event?: { step: number; signal?: string } | null;
   cancelled?: boolean;
+};
+
+type EnvScene = {
+  robot_start: number[];
+  survivor_pos: number[];
+  active_survivor?: { name: string; type: string; priority: string; pos: number[] };
+  survivors?: { name: string; type: string; priority: string; pos: number[]; active: boolean }[];
+  obstacles: { asset_id?: string; pos: number[]; size: number[]; color?: string }[];
+  hazards: { hazard_id?: string; type?: string; center: number[]; radius: number; color?: string }[];
+  terrain?: {
+    grid_size: number;
+    heights: number[][];
+    roughness?: number[][];
+    danger?: number[][];
+    rigid?: number[][];
+  };
 };
 
 type SceneResult = {
@@ -28,6 +48,7 @@ type SceneResult = {
     hazards: { hazard_id: string; type: string; severity: string }[];
     notes: string;
   };
+  env_scene: EnvScene;
   eval: EvalResult;
   episode: EpisodeResult | null;
   episode_error?: string;
@@ -96,6 +117,28 @@ export default function GeneratePage() {
 
   const scoreColor = (score: number) =>
     score >= 80 ? 'var(--ok)' : score >= 60 ? '#f59e0b' : 'var(--red)';
+
+  const visualization = result
+    ? (() => {
+        const active = result.env_scene.active_survivor?.pos ?? result.env_scene.survivor_pos;
+        const alternate = result.env_scene.survivors?.find((s) => !s.active)?.pos ?? active;
+        const trajectory = result.episode?.trajectory ?? null;
+        const finalPoint = trajectory?.[trajectory.length - 1] ?? result.env_scene.robot_start;
+        const previousPoint = trajectory && trajectory.length > 1
+          ? trajectory[trajectory.length - 2]
+          : result.env_scene.robot_start;
+        const heading = Math.atan2(finalPoint[1] - previousPoint[1], finalPoint[0] - previousPoint[0]) * 180 / Math.PI;
+        return {
+          robotPos: { x: finalPoint[0], y: finalPoint[1] },
+          heading: Number.isFinite(heading) ? heading : 0,
+          trajectory,
+          survivors: {
+            CHILD: { x: active[0], y: active[1] },
+            ADULT: { x: alternate[0], y: alternate[1] },
+          },
+        };
+      })()
+    : null;
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--ink)' }}>
@@ -275,6 +318,22 @@ export default function GeneratePage() {
         {/* Result */}
         {status === 'done' && result && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {visualization && (
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: 6, overflow: 'hidden' }}>
+                <div style={{ height: 460 }}>
+                  <ThreeArena
+                    robotPos={visualization.robotPos}
+                    robotHeading={visualization.heading}
+                    activeTarget="CHILD"
+                    trajectory={visualization.trajectory}
+                    obstacles={result.env_scene.obstacles}
+                    hazards={result.env_scene.hazards}
+                    terrain={result.env_scene.terrain ?? null}
+                    survivors={visualization.survivors}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Eval card */}
             <div style={{ background: 'var(--surface)', border: `1px solid ${result.eval.passed ? 'var(--ok)' : 'var(--red)'}`, borderRadius: 6, padding: 20 }}>
@@ -337,7 +396,20 @@ export default function GeneratePage() {
                   </span>
                   <span>steps: <strong style={{ color: 'var(--ink)' }}>{result.episode.steps}</strong></span>
                   <span>reward: <strong style={{ color: 'var(--ink)' }}>{result.episode.total_reward.toFixed(2)}</strong></span>
+                  {result.episode.final_dist != null && (
+                    <span>final dist: <strong style={{ color: 'var(--ink)' }}>{result.episode.final_dist.toFixed(2)}m</strong></span>
+                  )}
                 </div>
+                {result.episode.gif_url && (
+                  <div style={{ marginTop: 16, border: '1px solid var(--rule)', background: 'var(--bg)' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt="Generated robot rollout"
+                      src={`${result.episode.gif_url}?t=${Date.now()}`}
+                      style={{ display: 'block', width: '100%', maxHeight: 360, objectFit: 'contain' }}
+                    />
+                  </div>
+                )}
               </div>
             )}
 

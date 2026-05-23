@@ -62,6 +62,19 @@ def make_scene() -> SceneSpec:
                 size=ASSET_CATALOG["standing_wall"].size,
                 rotation_yaw=131.0,
             ),
+            *[
+                PlacedAsset(
+                    asset_id="rubble_pile_small",
+                    position=(
+                        3.0 + index,
+                        3.0 + (index % 3),
+                        ASSET_CATALOG["rubble_pile_small"].size[2] / 2,
+                    ),
+                    size=ASSET_CATALOG["rubble_pile_small"].size,
+                    rotation_yaw=15.0 + index,
+                )
+                for index in range(6)
+            ],
         ],
         hazards=[
             HazardZone(
@@ -108,9 +121,12 @@ def test_disaster_env_accepts_converted_scene_with_many_assets() -> None:
     try:
         obs, _ = env.reset()
         assert obs.shape == env.observation_space.shape
-        assert len(env._obstacles) > OBSTACLE_COUNT
+        assert len(env_scene["obstacles"]) > OBSTACLE_COUNT
+        assert len(env._obstacles) == OBSTACLE_COUNT
 
-        next_obs, reward, terminated, truncated, info = env.step(np.array([0.5, 0.0]))
+        next_obs, reward, terminated, truncated, info = env.step(
+            np.zeros(env.action_space.shape, dtype=np.float32)
+        )
 
         assert next_obs.shape == env.observation_space.shape
         assert isinstance(reward, float)
