@@ -57,13 +57,25 @@ def create_app(goal_queue: Queue, shared_result) -> FastAPI:
 
     @app.post("/command")
     async def command(req: CommandRequest):
-        # Stub — full Gemini + Queue integration in issue #17
+        from gemini_client import get_gemini_target, SURVIVORS as _SURVIVORS
+
+        result = get_gemini_target(req.text, _SURVIVORS)
+
+        shared_result["done"] = False
+        goal_queue.put(result["target_id"])
+
+        # Poll without blocking the event loop — 30s max
+        for _ in range(300):
+            await asyncio.sleep(0.1)
+            if shared_result.get("done"):
+                break
+
         return {
-            "target_id": "child",
-            "reason": "stub — Gemini not wired yet",
-            "confidence": 0.0,
-            "reached": False,
-            "steps": 0,
+            "target_id": result["target_id"],
+            "confidence": result.get("confidence", 0.0),
+            "reason": result.get("reason", ""),
+            "reached": shared_result.get("reached", False),
+            "steps": shared_result.get("steps", 0),
         }
 
     return app
