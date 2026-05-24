@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MODEL = "gemini-flash-lite-latest"
+DEFAULT_MODEL = "gemini-3.5-flash"
 DEFAULT_BASE_AGENT = DEFAULT_MODEL
 DEFAULT_SMOKE_TEST_MODEL = DEFAULT_MODEL
 DEFAULT_THINKING_BUDGET = 256

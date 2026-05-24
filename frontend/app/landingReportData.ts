@@ -154,8 +154,8 @@ export const RESEARCH_TASKS: ResearchTask[] = [
   {
     id: 'T-06',
     area: 'Gemini grounding',
-    status: 'planned',
-    description: 'Natural-language goal selection layered on top of navigation policy.',
+    status: 'complete',
+    description: 'Gemini 3.5 Flash goal selection and NL scene generation via ScenarioAgent.',
   },
 ];
 

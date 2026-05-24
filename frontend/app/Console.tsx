@@ -333,17 +333,17 @@ export default function Console() {
 
         if (stepIdx === Math.floor(traj.length * 0.25)) {
           pushLine(
-            'GR-ER&gt;',
+            'POLICY&gt;',
             `<span class="dim">progress   →</span> 25% · pose <span class="v">(${rx.toFixed(2)}, ${ry.toFixed(2)})</span> · clearance ok`
           );
         } else if (stepIdx === Math.floor(traj.length * 0.6)) {
           pushLine(
-            'GR-ER&gt;',
+            'POLICY&gt;',
             `<span class="dim">obstacle   →</span> skirting obstacle sector · distance to target <span class="v">${dist.toFixed(2)}m</span>`
           );
         } else if (stepIdx === Math.floor(traj.length * 0.88)) {
           pushLine(
-            'GR-ER&gt;',
+            'POLICY&gt;',
             `<span class="dim">approach   →</span> &lt; <span class="v">1.0m</span> · reducing speed · arm stabilizer`
           );
         }
@@ -389,14 +389,14 @@ export default function Console() {
         setStateKind('is-ok');
         setStateText('TARGET REACHED');
         pushLine(
-          'GR-ER&gt;',
+          'POLICY&gt;',
           `<span class="dim">result     →</span> <span class="ok">TARGET REACHED</span> · ${target} stabilized · steps <span class="v">${finalSteps}</span>/${BUDGET} · t <span class="v">${wall.toFixed(1)}s</span>`,
         );
       } else {
         setStateKind('is-fail');
         setStateText('TIMEOUT');
         pushLine(
-          'GR-ER&gt;',
+          'POLICY&gt;',
           `<span class="dim">result     →</span> <span class="fail">TIMEOUT</span> · ${target} not reached · steps <span class="v">${finalSteps}</span>/${BUDGET}`,
         );
       }
@@ -432,11 +432,11 @@ export default function Console() {
       activeTargetRef.current = localParse.target;
 
       pushLine('OP   &gt;', `<span class="dim">order</span> "${escapeHtml(orderText)}"`, 'sys');
-      pushLine('GR-ER&gt;', `<span class="dim">local NLP  →</span> intent = <span class="v">prioritize.${localParse.target.toLowerCase()}</span>`);
-      pushLine('GR-ER&gt;', `<span class="dim">heuristic  →</span> ${localParse.why}`);
+      pushLine('GEMINI&gt;', `<span class="dim">local NLP  →</span> intent = <span class="v">prioritize.${localParse.target.toLowerCase()}</span>`);
+      pushLine('GEMINI&gt;', `<span class="dim">heuristic  →</span> ${localParse.why}`);
       pushLine(
-        'GR-ER&gt;',
-        `<span class="dim">gemini     →</span> sending to GR-ER 1.5 for final decision<span class="caret"></span>`,
+        'GEMINI&gt;',
+        `<span class="dim">query      →</span> Gemini 3.5 Flash for final decision<span class="caret"></span>`,
       );
       pushLine(
         'SYS  &gt;',
@@ -468,13 +468,13 @@ export default function Console() {
           setActiveTarget(finalTarget);
           activeTargetRef.current = finalTarget;
           pushLine(
-            'GR-ER&gt;',
+            'GEMINI&gt;',
             `<span class="dim">correction →</span> Gemini selected <span class="v">${finalTarget}</span> · heuristic overridden`,
           );
         }
         if (data.reason) {
           pushLine(
-            'GR-ER&gt;',
+            'GEMINI&gt;',
             `<span class="dim">reasoning  →</span> <span class="v">${finalTarget}</span> · ${escapeHtml(String(data.reason))}`,
           );
         }
@@ -655,7 +655,7 @@ export default function Console() {
               </span>
               <span className="sep">/</span>
               <span>
-                NLP <b>GEMINI GR-ER 1.5</b>
+                NLP <b>Gemini 3.5 Flash</b>
               </span>
             </div>
 
@@ -682,7 +682,7 @@ export default function Console() {
               <h2>
                 Comms <span className="tag">— reasoning channel</span>
               </h2>
-              <span className="idx mono">[ 02 / GR-ER ]</span>
+              <span className="idx mono">[ 02 / GEMINI ]</span>
             </div>
             <div className="comms" ref={commsScrollRef} role="log" aria-live="polite">
               {comms.map((l) => (

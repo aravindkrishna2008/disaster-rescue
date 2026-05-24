@@ -5,8 +5,10 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
+    "prebuild": "node scripts/verify-landing-screenshots.mjs",
     "start": "next start -p 3000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "verify:landing-screenshots": "node scripts/verify-landing-screenshots.mjs"
   },
   "dependencies": {
     "next": "14.2.5",

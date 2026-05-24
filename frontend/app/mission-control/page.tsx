@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import WorkflowNav from '../WorkflowNav';
+import { hydrateGymRuns, loadWorkflowSession, saveGymRuns } from '../workflowSession';
 
 type Scene = {
   index: number;
@@ -204,6 +205,7 @@ export default function MissionControlPage() {
 
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [runs, setRuns] = useState<Record<number, RunState>>({});
+  const [runsHydrated, setRunsHydrated] = useState(false);
   const [trainSteps, setTrainSteps] = useState(200_000);
   const [presets, setPresets] = useState<StepPreset[]>(FALLBACK_PRESETS);
   const [defaultMaxSteps, setDefaultMaxSteps] = useState(300);
@@ -244,6 +246,19 @@ export default function MissionControlPage() {
     const s = secs % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
   };
+
+  useEffect(() => {
+    const stored = hydrateGymRuns(loadWorkflowSession().gymRuns);
+    if (Object.keys(stored).length > 0) {
+      setRuns(stored as Record<number, RunState>);
+    }
+    setRunsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!runsHydrated) return;
+    saveGymRuns(runs);
+  }, [runs, runsHydrated]);
 
   useEffect(() => {
     fetch('/scenes')
@@ -466,10 +481,6 @@ export default function MissionControlPage() {
         <div className="clock">
           <span className="lbl">UTC</span>
           <span className="val mono">{clockUtc}</span>
-          <span className="lbl" style={{ marginLeft: 10 }}>STATUS</span>
-          <span className="val mono" style={{ color: anyRunning ? 'var(--red)' : 'var(--ok)' }}>
-            {anyRunning ? 'RUNNING' : 'IDLE'}
-          </span>
         </div>
       </header>
 

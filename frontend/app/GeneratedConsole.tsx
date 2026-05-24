@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import ThreeArena from './ThreeArena';
 import WorkflowNav from './WorkflowNav';
+import { setActiveSceneId } from './workflowSession';
 
 type Terrain = {
   grid_size: number;
@@ -119,6 +120,7 @@ export default function GeneratedConsole({ sceneId }: { sceneId: string }) {
         if (!active) return;
         setSession(data);
         setBudget(data.default_max_steps || 1500);
+        setActiveSceneId(sceneId);
         setStatus('ready');
       })
       .catch((err: unknown) => {

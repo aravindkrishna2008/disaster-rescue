@@ -265,7 +265,7 @@ class GenerateSceneRequest(BaseModel):
     difficulty: Difficulty = "medium"
     survivor_count: int = 1
     theme: str | None = None
-    skip_episode: bool = False
+    skip_episode: bool = True
     max_steps: int | None = None
 
 

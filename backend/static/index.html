@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>GR-ER · Ground Rescue — Episode Runner</title>
+<title>Gemini 3.5 Flash · Ground Rescue — Episode Runner</title>
 <meta name="viewport" content="width=1280" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -281,13 +281,13 @@
   <div class="brand">
     <div class="brand-mark" aria-hidden="true"></div>
     <div>
-      <div class="brand-name">GR-ER · <em>Ground Rescue</em></div>
+      <div class="brand-name"><em>Battle Angel</em></div>
       <div class="brand-sub mono">EPISODE RUNNER · v0.4.2</div>
     </div>
   </div>
   <div class="ep-state">
     <span class="pill" id="state-pill"><span class="dot"></span><span id="state-text">EPISODE IDLE</span></span>
-    <span class="pill mono"><span class="dot"></span><span>GEMINI · GR-ER 1.5</span></span>
+    <span class="pill mono"><span class="dot"></span><span>Gemini 3.5 Flash</span></span>
     <span class="pill mono"><span class="dot"></span><span>SECTOR · D-14 / WAREHOUSE</span></span>
   </div>
   <div class="clock">
@@ -330,7 +330,7 @@
         <span class="sep">/</span>
         <span>POLICY <b>PPO</b></span>
         <span class="sep">/</span>
-        <span>NLP <b>GEMINI GR-ER 1.5</b></span>
+        <span>NLP <b>Gemini 3.5 Flash</b></span>
       </div>
 
       <div class="quick">
@@ -345,7 +345,7 @@
     <div class="panel" style="flex:1;display:flex;flex-direction:column;">
       <div class="panel-hd">
         <h2>Comms <span class="tag">— reasoning channel</span></h2>
-        <span class="idx mono">[ 02 / GR-ER ]</span>
+        <span class="idx mono">[ 02 / GEMINI ]</span>
       </div>
       <div class="comms mono" id="comms" role="log" aria-live="polite">
 <div class="line"><span class="ts" id="ts-init">--:--:--</span><span class="src sys">SYS  &gt;</span><span class="msg">link established · PPO policy loaded · awaiting order</span></div>
@@ -611,15 +611,15 @@
 
       if (!logged25 && p > 0.25) {
         logged25 = true;
-        log('GR-ER&gt;', `<span class="dim">progress   →</span> 25% · pose <span class="v">(${robot.x.toFixed(2)}, ${robot.y.toFixed(2)})</span> · clearance ok`);
+        log('POLICY&gt;', `<span class="dim">progress   →</span> 25% · pose <span class="v">(${robot.x.toFixed(2)}, ${robot.y.toFixed(2)})</span> · clearance ok`);
       }
       if (!logged75 && p > 0.6) {
         logged75 = true;
-        log('GR-ER&gt;', `<span class="dim">obstacle   →</span> debris at <span class="v">(1.4, −0.6)</span> · skirting left · cost +<span class="v">3</span> cells`);
+        log('POLICY&gt;', `<span class="dim">obstacle   →</span> debris at <span class="v">(1.4, −0.6)</span> · skirting left · cost +<span class="v">3</span> cells`);
       }
       if (!loggedClose && p > 0.88) {
         loggedClose = true;
-        log('GR-ER&gt;', `<span class="dim">approach   →</span> &lt; <span class="v">0.6m</span> · reducing speed · arm stabilizer`);
+        log('POLICY&gt;', `<span class="dim">approach   →</span> &lt; <span class="v">0.6m</span> · reducing speed · arm stabilizer`);
       }
 
       animRaf = setTimeout(tick, stepMs);
@@ -658,11 +658,11 @@
     if (reached) {
       setStatePill('is-ok', 'TARGET REACHED');
       $('result-text').textContent = 'target reached';
-      log('GR-ER&gt;', `<span class="dim">result     →</span> <span class="ok">TARGET REACHED</span> · ${activeTarget} stabilized · steps <span class="v">${finalSteps}</span>/${BUDGET} · t <span class="v">${wall.toFixed(1)}s</span>`);
+      log('POLICY&gt;', `<span class="dim">result     →</span> <span class="ok">TARGET REACHED</span> · ${activeTarget} stabilized · steps <span class="v">${finalSteps}</span>/${BUDGET} · t <span class="v">${wall.toFixed(1)}s</span>`);
     } else {
       setStatePill('is-fail', 'TIMEOUT');
       $('result-text').textContent = 'timeout — step budget exceeded';
-      log('GR-ER&gt;', `<span class="dim">result     →</span> <span class="fail">TIMEOUT</span> · ${activeTarget} not reached · steps <span class="v">${finalSteps}</span>/${BUDGET}`);
+      log('POLICY&gt;', `<span class="dim">result     →</span> <span class="fail">TIMEOUT</span> · ${activeTarget} not reached · steps <span class="v">${finalSteps}</span>/${BUDGET}`);
     }
 
     epCounter++;
@@ -690,9 +690,9 @@
     setTarget(localParse.target);
 
     log('OP   &gt;', `<span class="dim">order</span> "${escapeHtml(orderText)}"`, 'sys');
-    log('GR-ER&gt;', `<span class="dim">local NLP  →</span> intent = <span class="v">prioritize.${localParse.target.toLowerCase()}</span>`);
-    log('GR-ER&gt;', `<span class="dim">heuristic  →</span> ${localParse.why}`);
-    log('GR-ER&gt;', `<span class="dim">gemini     →</span> sending to GR-ER 1.5 for final decision<span class="caret"></span>`);
+    log('GEMINI&gt;', `<span class="dim">local NLP  →</span> intent = <span class="v">prioritize.${localParse.target.toLowerCase()}</span>`);
+    log('GEMINI&gt;', `<span class="dim">heuristic  →</span> ${localParse.why}`);
+    log('GEMINI&gt;', `<span class="dim">query      →</span> Gemini 3.5 Flash for final decision<span class="caret"></span>`);
     log('SYS  &gt;', `<span class="dim">dispatching episode EP-${epCounter + 1} · MuJoCo active · awaiting result</span>`, 'sys');
 
     dispatching = true;
@@ -716,10 +716,10 @@
       const geminiTarget = data.target_id ? data.target_id.toUpperCase() : localParse.target;
       if (geminiTarget !== activeTarget) {
         setTarget(geminiTarget);
-        log('GR-ER&gt;', `<span class="dim">correction →</span> Gemini selected <span class="v">${geminiTarget}</span> · heuristic overridden`);
+        log('GEMINI&gt;', `<span class="dim">correction →</span> Gemini selected <span class="v">${geminiTarget}</span> · heuristic overridden`);
       }
       if (data.reason) {
-        log('GR-ER&gt;', `<span class="dim">reasoning  →</span> <span class="v">${geminiTarget}</span> · ${escapeHtml(data.reason)}`);
+        log('GEMINI&gt;', `<span class="dim">reasoning  →</span> <span class="v">${geminiTarget}</span> · ${escapeHtml(data.reason)}`);
       }
       finishEpisode(!!data.reached, data.steps || simSteps, undefined);
     } else {

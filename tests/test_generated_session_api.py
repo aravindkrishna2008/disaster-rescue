@@ -107,9 +107,8 @@ def test_generated_scene_is_retained_for_extended_console_reruns() -> None:
 
         assert generated["scene_id"].startswith("generated_")
         assert generated["default_max_steps"] == 1500
-        assert generated["episode"]["reached"] is True
-        assert generated["episode"]["gif_duration_seconds"] == 31.2
-        assert runner.call_args.kwargs["max_steps"] == 1500
+        assert generated["episode"] is None
+        assert runner.call_count == 0
 
         stored = load.endpoint(generated["scene_id"])
         assert stored["env_scene"]["active_survivor"]["name"] == "Asha"
@@ -119,6 +118,7 @@ def test_generated_scene_is_retained_for_extended_console_reruns() -> None:
         )
         assert rerun_result["episode"]["max_steps"] == 2200
         assert rerun_result["episode"]["gait_score"] == 0.683
+        assert runner.call_count == 1
         assert runner.call_args.kwargs["max_steps"] == 2200
 
 

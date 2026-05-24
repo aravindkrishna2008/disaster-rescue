@@ -1,30 +1,17 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import ThreeArena from '../ThreeArena';
 import WorkflowNav from '../WorkflowNav';
+import { setActiveSceneId } from '../workflowSession';
 
 type EvalResult = {
   score: number;
   passed: boolean;
   issues: string[];
   feedback: string;
-};
-
-type EpisodeResult = {
-  reached: boolean;
-  steps: number;
-  total_reward: number;
-  final_dist?: number | null;
-  gif_url?: string;
-  gif_path?: string;
-  trajectory?: number[][];
-  min_dist?: number | null;
-  obstacle_contacts?: number;
-  hazard_steps?: number;
-  detection_event?: { step: number; signal?: string } | null;
-  cancelled?: boolean;
 };
 
 type EnvScene = {
@@ -56,7 +43,7 @@ type SceneResult = {
   };
   env_scene: EnvScene;
   eval: EvalResult;
-  episode: EpisodeResult | null;
+  episode: null;
   episode_error?: string;
 };
 
@@ -64,9 +51,9 @@ const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 const SURVIVOR_COUNT = 1;
 
 export default function GeneratePage() {
+  const router = useRouter();
   const [description, setDescription] = useState('');
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
-  const [skipEpisode, setSkipEpisode] = useState(false);
   const [theme, setTheme] = useState('');
   const [promptLoading, setPromptLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
@@ -89,7 +76,7 @@ export default function GeneratePage() {
         difficulty,
         survivor_count: SURVIVOR_COUNT,
         theme: theme.trim() || null,
-        skip_episode: skipEpisode,
+        skip_episode: true,
       }),
     });
     if (!res.ok) {
@@ -99,6 +86,9 @@ export default function GeneratePage() {
     const data: SceneResult = await res.json();
     setResult(data);
     setStatus('done');
+    if (data.eval.passed) {
+      setActiveSceneId(data.scene_id);
+    }
   }
 
   async function handleGeneratePrompt() {
@@ -133,29 +123,20 @@ export default function GeneratePage() {
 
   const scoreColor = (score: number) =>
     score >= 80 ? 'var(--ok)' : score >= 60 ? '#f59e0b' : 'var(--red)';
-  const episodeGif = result?.episode?.gif_url
-    ?? (result?.episode?.gif_path
-      ? `/gifs/${result.episode.gif_path.split('/').pop()}`
-      : null);
 
   const visualization = result
     ? (() => {
         const active = result.env_scene.active_survivor?.pos ?? result.env_scene.survivor_pos;
         const survivorType = (result.env_scene.active_survivor?.type ?? 'child').toLowerCase();
         const isChild = survivorType === 'child' || survivorType === 'baby';
-        const trajectory = result.episode?.trajectory ?? null;
-        const finalPoint = trajectory?.[trajectory.length - 1] ?? result.env_scene.robot_start;
-        const previousPoint = trajectory && trajectory.length > 1
-          ? trajectory[trajectory.length - 2]
-          : result.env_scene.robot_start;
-        const heading = Math.atan2(finalPoint[1] - previousPoint[1], finalPoint[0] - previousPoint[0]) * 180 / Math.PI;
+        const start = result.env_scene.robot_start;
         const offMap = { x: 999, y: 999 };
         const activePos = { x: active[0], y: active[1] };
         return {
           targetName: isChild ? 'CHILD' as const : 'ADULT' as const,
-          robotPos: { x: finalPoint[0], y: finalPoint[1] },
-          heading: Number.isFinite(heading) ? heading : 0,
-          trajectory,
+          robotPos: { x: start[0], y: start[1] },
+          heading: 0,
+          trajectory: null,
           survivors: {
             CHILD: isChild ? activePos : offMap,
             ADULT: isChild ? offMap : activePos,
@@ -163,6 +144,11 @@ export default function GeneratePage() {
         };
       })()
     : null;
+
+  const openConsole = (sceneId: string) => {
+    setActiveSceneId(sceneId);
+    router.push(`/console?scene_id=${encodeURIComponent(sceneId)}`);
+  };
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--ink)' }}>
@@ -183,8 +169,8 @@ export default function GeneratePage() {
             02 / Scene Generator
           </h1>
           <p style={{ color: 'var(--ink-dim)', fontSize: 13 }}>
-            After the Training Gym, describe a deployment candidate. ScenarioAgent builds the scene and
-            EvalAgent scores it. Passing scenes run the PPO policy for playback and readiness statistics.
+            Describe a deployment candidate. ScenarioAgent builds the layout, EvalAgent validates it, and the
+            3D preview loads here. Policy rollouts and GIF playback live in the Interactive Console.
           </p>
         </div>
 
@@ -220,7 +206,7 @@ export default function GeneratePage() {
               className="btn-secondary"
               style={{ opacity: promptLoading ? 0.5 : 1, whiteSpace: 'nowrap' }}
             >
-              {promptLoading ? 'Asking Gemini…' : 'Generate with Gemini'}
+              {promptLoading ? 'Asking Gemini 3.5…' : 'Generate with Gemini 3.5'}
             </button>
           </div>
 
@@ -272,26 +258,22 @@ export default function GeneratePage() {
                 ))}
               </select>
             </div>
-
-            <div style={{ flex: '1 1 200px', display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontFamily: 'monospace', color: 'var(--ink-dim)' }}>
-                <input
-                  type="checkbox"
-                  checked={skipEpisode}
-                  onChange={e => setSkipEpisode(e.target.checked)}
-                />
-                Skip robot episode
-              </label>
-            </div>
           </div>
 
           <button
             onClick={handleGenerate}
             disabled={status === 'loading' || !description.trim()}
-            className="btn-primary"
-            style={{ opacity: status === 'loading' || !description.trim() ? 0.5 : 1 }}
+            className={`btn-primary btn-primary--progress${status === 'loading' ? ' is-loading' : ''}`}
+            style={{ opacity: !description.trim() && status !== 'loading' ? 0.5 : 1 }}
           >
-            {status === 'loading' ? 'Generating…' : 'Generate Scene'}
+            <span className="btn-primary__label">
+              {status === 'loading' ? 'Generating…' : 'Generate Scene'}
+            </span>
+            {status === 'loading' && (
+              <span className="btn-primary__bar" aria-hidden="true">
+                <span className="btn-primary__bar-fill" />
+              </span>
+            )}
           </button>
         </div>
 
@@ -377,71 +359,28 @@ export default function GeneratePage() {
               )}
             </div>
 
-            {/* Episode playback and deployment stats */}
-            {result.episode && (
-              <div className="generated-playback">
-                <div className="generated-playback-hd">
-                  <div>
-                    <span className="generated-eyebrow mono">03 / POLICY PLAYBACK</span>
-                    <h2>Generated Scene Response</h2>
-                    <p>Animated rollout and initial deployment-readiness statistics for this scene.</p>
-                  </div>
-                  <Link href={`/console?scene_id=${encodeURIComponent(result.scene_id)}`} className="btn-secondary">
-                    Open Interactive Console
-                  </Link>
-                </div>
-                <div className="generated-playback-body">
-                  <div className="generated-animation">
-                    {episodeGif ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={`${episodeGif}?t=${Date.now()}`} alt="PPO rollout in generated scene" />
-                    ) : (
-                      <div className="generated-animation-empty">
-                        Animation not available for this episode.
-                      </div>
-                    )}
-                  </div>
-                  <dl className="generated-kpis mono">
-                    <div>
-                      <dt>Target reached</dt>
-                      <dd className={result.episode.reached ? 'ok' : 'fail'}>
-                        {result.episode.reached ? 'YES' : 'NO'}
-                      </dd>
-                    </div>
-                    <div><dt>Steps</dt><dd>{result.episode.steps}</dd></div>
-                    <div><dt>Total reward</dt><dd>{result.episode.total_reward.toFixed(2)}</dd></div>
-                    <div>
-                      <dt>Final distance</dt>
-                      <dd>{result.episode.final_dist == null ? '—' : `${result.episode.final_dist.toFixed(2)} m`}</dd>
-                    </div>
-                    <div><dt>Obstacle contacts</dt><dd>{result.episode.obstacle_contacts ?? '—'}</dd></div>
-                    <div><dt>Hazard steps</dt><dd>{result.episode.hazard_steps ?? '—'}</dd></div>
-                  </dl>
-                </div>
-              </div>
-            )}
-
-            {result.episode_error && (
-              <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--red)', padding: '8px 0' }}>
-                Episode error: {result.episode_error}
-              </div>
-            )}
-
-            {result.eval.passed && !result.episode && (
+            {result.eval.passed && (
               <div className="generated-console-invite">
                 <div>
-                  <span className="generated-eyebrow mono">03 / POLICY PLAYBACK</span>
-                  <strong>Scene is ready for an interactive extended run.</strong>
+                  <span className="generated-eyebrow mono">03 / INTERACTIVE CONSOLE</span>
+                  <strong>Scene validated — run the policy and render the GIF in the Console.</strong>
+                  <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--ink-mid)' }}>
+                    Rollouts, telemetry, and extended episode budgets are only available after you open the console.
+                  </p>
                 </div>
-                <Link href={`/console?scene_id=${encodeURIComponent(result.scene_id)}`} className="btn-secondary">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => openConsole(result.scene_id)}
+                >
                   Open Interactive Console
-                </Link>
+                </button>
               </div>
             )}
 
             {!result.eval.passed && (
               <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--ink-dim)', padding: '4px 0' }}>
-                Scene rejected by EvalAgent (score &lt; 60). Robot episode skipped.
+                Scene rejected by EvalAgent (score &lt; 60). Adjust the description and regenerate.
               </div>
             )}
           </div>

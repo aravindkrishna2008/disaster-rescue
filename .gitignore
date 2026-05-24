@@ -38,6 +38,10 @@ htmlcov/
 # Next.js build output
 frontend/.next/
 
+# Landing page screenshots (committed marketing assets)
+!frontend/public/images/
+!frontend/public/images/*.png
+
 # ---------------------------------------------------------------------------
 # ML / PPO artifacts (regenerate with train.py + export_run.py)
 # ---------------------------------------------------------------------------

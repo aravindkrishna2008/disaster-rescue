@@ -439,7 +439,7 @@ Return a JSON scene config with:
 Return ONLY valid JSON, no other text.
 """
     
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-3.5-flash")
     response = model.generate_content(prompt)
     
     try:
@@ -534,7 +534,7 @@ Keep it conversational and highlight any challenges overcome.
 """
     
     genai.configure(api_key="YOUR_API_KEY")
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-3.5-flash")
     response = model.generate_content(prompt)
     
     return response.text
