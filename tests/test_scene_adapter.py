@@ -155,3 +155,21 @@ def test_hard_terrain_contains_rigid_and_dangerous_cells() -> None:
     assert max(max(row) for row in terrain["roughness"]) >= 1.0
     assert sum(sum(row) for row in terrain["danger"]) > 0
     assert sum(sum(row) for row in terrain["rigid"]) > 0
+
+
+def test_disaster_env_honors_extended_episode_budget() -> None:
+    env = DisasterEnv(
+        scene=scene_spec_to_env_scene(make_scene()),
+        render_mode="rgb_array",
+        max_steps=2,
+    )
+    try:
+        env.reset()
+        action = np.zeros(env.action_space.shape, dtype=np.float32)
+        _, _, _, first_truncated, _ = env.step(action)
+        _, _, _, second_truncated, _ = env.step(action)
+
+        assert first_truncated is False
+        assert second_truncated is True
+    finally:
+        env.close()

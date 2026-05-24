@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agents import DEFAULT_BASE_AGENT, DEFAULT_MODEL, ManagedAgent
+from backend.agents import DEFAULT_BASE_AGENT, DEFAULT_MODEL, ManagedAgent
 
 
 SCENARIO_MODEL = DEFAULT_MODEL

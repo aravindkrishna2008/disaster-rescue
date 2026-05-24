@@ -36,6 +36,42 @@ def test_get_gemini_target_uses_adk_agent(monkeypatch: pytest.MonkeyPatch) -> No
     }
 
 
+def test_generate_scene_prompt_uses_adk_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gemini_client, "configure_google_api_key", lambda: "key")
+    class PromptAgent(FakeManagedAgent):
+        response_text = "Collapsed chemical plant with leaking gas pockets and one trapped worker behind dense rubble."
+
+    fake_agent = PromptAgent
+    monkeypatch.setattr(gemini_client, "ManagedAgent", fake_agent)
+
+    result = gemini_client.generate_scene_prompt(
+        difficulty="hard",
+        survivor_count=1,
+        theme="chemical plant",
+    )
+
+    assert result == fake_agent.response_text
+
+
+def test_generate_scene_prompt_strips_markdown_fences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gemini_client, "configure_google_api_key", lambda: "key")
+    class PromptAgent(FakeManagedAgent):
+        response_text = "```text\nFlooded parking garage with one survivor on a tilted slab.\n```"
+
+    fake_agent = PromptAgent
+    monkeypatch.setattr(gemini_client, "ManagedAgent", fake_agent)
+
+    result = gemini_client.generate_scene_prompt(
+        difficulty="medium",
+        survivor_count=1,
+        theme="flood",
+    )
+
+    assert result == "Flooded parking garage with one survivor on a tilted slab."
+
+
 def test_get_gemini_target_falls_back_without_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

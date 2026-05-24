@@ -15,12 +15,14 @@ thread via asyncio.to_thread to keep the event loop responsive.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import os
 import signal
 import subprocess
 import sys
 import threading
 import time
+from uuid import uuid4
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +39,7 @@ from disaster_env import DEFAULT_BALANCE_ASSIST_SCALE, DEFAULT_SCENE, generate_r
 from export_run import list_runs, load_run_manifest, manifest_to_frontend
 from run_store import current_run_id, append_live_eval, run_dir, read_json, load_episode
 from episode_loader import replay_episode_actions
-from gemini_client import SURVIVORS, get_gemini_target
+from gemini_client import SURVIVORS, generate_scene_prompt, get_gemini_target
 from rescue_runner import run_episode
 from scenes import GENERATED_SCENES, get_scene
 from scenario_agent import (
@@ -60,6 +62,8 @@ MODEL_PATH = os.environ.get(
     "BATTLE_ANGEL_MODEL", str(_HERE / "models" / "g1_locomotion_natural_final")
 )
 MAX_STEPS = int(os.environ.get("BATTLE_ANGEL_MAX_STEPS", "900"))
+GENERATED_MAX_STEPS = int(os.environ.get("BATTLE_ANGEL_GENERATED_MAX_STEPS", "1500"))
+MAX_REQUESTED_EPISODE_STEPS = int(os.environ.get("BATTLE_ANGEL_MAX_REQUESTED_STEPS", "3000"))
 ASSIST_SCALE = float(os.environ.get("BATTLE_ANGEL_ASSIST_SCALE", "0.95"))
 BALANCE_ASSIST_SCALE = float(
     os.environ.get("BATTLE_ANGEL_BALANCE_ASSIST_SCALE", str(DEFAULT_BALANCE_ASSIST_SCALE))
@@ -80,6 +84,10 @@ FIXED_NUM_ENVS = 8
 # Track cancel events for active episode runs so the frontend can kill them.
 _ACTIVE_CANCELS: dict[str, threading.Event] = {}
 _ACTIVE_LOCK = threading.Lock()
+_EPISODE_CONCURRENCY = max(1, int(os.environ.get("BATTLE_ANGEL_EPISODE_CONCURRENCY", "2")))
+_EPISODE_SEMAPHORE = threading.Semaphore(_EPISODE_CONCURRENCY)
+_GENERATED_SESSIONS: dict[str, dict] = {}
+_GENERATED_LOCK = threading.Lock()
 
 
 def _register_cancel(key: str) -> threading.Event:
@@ -105,6 +113,31 @@ def _cancel_all() -> int:
     for ev in events:
         ev.set()
     return len(events)
+
+
+def _episode_steps(requested: int | None, default: int) -> int:
+    steps = default if requested is None else int(requested)
+    if steps <= 0 or steps > MAX_REQUESTED_EPISODE_STEPS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_steps must be between 1 and {MAX_REQUESTED_EPISODE_STEPS}",
+        )
+    return steps
+
+
+def _save_generated_session(payload: dict) -> dict:
+    scene_id = payload["scene_id"]
+    with _GENERATED_LOCK:
+        _GENERATED_SESSIONS[scene_id] = deepcopy(payload)
+        return deepcopy(_GENERATED_SESSIONS[scene_id])
+
+
+def _load_generated_session(scene_id: str) -> dict:
+    with _GENERATED_LOCK:
+        payload = _GENERATED_SESSIONS.get(scene_id)
+        if payload is None:
+            raise HTTPException(status_code=404, detail=f"generated scene {scene_id!r} not found")
+        return deepcopy(payload)
 
 
 # ----- Training subprocess management ---------------------------------------
@@ -223,14 +256,15 @@ class TrainRequest(BaseModel):
 
 class GeneratePromptRequest(BaseModel):
     difficulty: Difficulty = "medium"
-    survivor_count: int = 2
+    survivor_count: int = 1
     theme: str | None = None
 
 
 class GenerateSceneRequest(BaseModel):
     description: str
     difficulty: Difficulty = "medium"
-    survivor_count: int = 2
+    survivor_count: int = 1
+    theme: str | None = None
     skip_episode: bool = False
     max_steps: int | None = None
 
@@ -282,43 +316,44 @@ def _gif_filename_for(idx: int, name: str) -> str:
 
 
 def _run_scene(idx: int, max_steps: int, cancel_event: threading.Event) -> dict:
-    scene = get_scene(idx)
-    name = scene["name"]
-    gif_name = _gif_filename_for(idx, name)
-    gif_path = _OUTPUT / gif_name
-    result = run_episode(
-        scene=scene,
-        model_path=MODEL_PATH,
-        gif_path=str(gif_path),
-        max_steps=max_steps,
-        assist_scale=ASSIST_SCALE,
-        balance_assist_scale=BALANCE_ASSIST_SCALE,
-        cancel_event=cancel_event,
-    )
-    return {
-        "scene_index": idx,
-        "scene_name": name,
-        "difficulty": scene.get("difficulty", "medium"),
-        "reached": bool(result.get("reached", False)),
-        "fallen": bool(result.get("fallen", False)),
-        "steps": int(result.get("steps", 0)),
-        "total_reward": float(result.get("total_reward", 0.0)),
-        "final_dist": result.get("final_dist"),
-        "min_dist": result.get("min_dist"),
-        "obstacle_contacts": result.get("obstacle_contacts", 0),
-        "hazard_steps": result.get("hazard_steps", 0),
-        "mean_stance_slip": result.get("mean_stance_slip", 0.0),
-        "mean_assist_force": result.get("mean_assist_force", 0.0),
-        "gait_score": result.get("gait_score", 0.0),
-        "assist_scale": result.get("assist_scale", ASSIST_SCALE),
-        "balance_assist_scale": result.get("balance_assist_scale", BALANCE_ASSIST_SCALE),
-        "trajectory": result.get("trajectory", []),
-        "detection_event": result.get("detection_event"),
-        "cancelled": bool(result.get("cancelled", False)),
-        "survivor": scene.get("survivor", {}),
-        "gif_url": f"/gifs/{gif_name}",
-        "max_steps": max_steps,
-    }
+    with _EPISODE_SEMAPHORE:
+        scene = get_scene(idx)
+        name = scene["name"]
+        gif_name = _gif_filename_for(idx, name)
+        gif_path = _OUTPUT / gif_name
+        result = run_episode(
+            scene=scene,
+            model_path=MODEL_PATH,
+            gif_path=str(gif_path),
+            max_steps=max_steps,
+            assist_scale=ASSIST_SCALE,
+            balance_assist_scale=BALANCE_ASSIST_SCALE,
+            cancel_event=cancel_event,
+        )
+        return {
+            "scene_index": idx,
+            "scene_name": name,
+            "difficulty": scene.get("difficulty", "medium"),
+            "reached": bool(result.get("reached", False)),
+            "fallen": bool(result.get("fallen", False)),
+            "steps": int(result.get("steps", 0)),
+            "total_reward": float(result.get("total_reward", 0.0)),
+            "final_dist": result.get("final_dist"),
+            "min_dist": result.get("min_dist"),
+            "obstacle_contacts": result.get("obstacle_contacts", 0),
+            "hazard_steps": result.get("hazard_steps", 0),
+            "mean_stance_slip": result.get("mean_stance_slip", 0.0),
+            "mean_assist_force": result.get("mean_assist_force", 0.0),
+            "gait_score": result.get("gait_score", 0.0),
+            "assist_scale": result.get("assist_scale", ASSIST_SCALE),
+            "balance_assist_scale": result.get("balance_assist_scale", BALANCE_ASSIST_SCALE),
+            "trajectory": result.get("trajectory", []),
+            "detection_event": result.get("detection_event"),
+            "cancelled": bool(result.get("cancelled", False)),
+            "survivor": scene.get("survivor", {}),
+            "gif_url": f"/gifs/{gif_name}",
+            "max_steps": max_steps,
+        }
 
 
 def _scene_for_target(target_id: str) -> dict:
@@ -400,11 +435,38 @@ def _episode_response(result: dict, gif_url: str, max_steps: int) -> dict:
         "mean_stance_slip": result.get("mean_stance_slip", 0.0),
         "mean_assist_force": result.get("mean_assist_force", 0.0),
         "gait_score": result.get("gait_score", 0.0),
+        "final_heading_error": result.get("final_heading_error"),
+        "min_obstacle_clearance": result.get("min_obstacle_clearance"),
+        "min_hazard_clearance": result.get("min_hazard_clearance"),
+        "assist_scale": result.get("assist_scale", ASSIST_SCALE),
+        "balance_assist_scale": result.get("balance_assist_scale", BALANCE_ASSIST_SCALE),
         "gif_url": gif_url,
         "trajectory": result.get("trajectory", []),
         "detection_event": result.get("detection_event"),
+        "cancelled": bool(result.get("cancelled", False)),
+        "completion_reason": result.get("completion_reason"),
+        "frame_count": int(result.get("frame_count", 0)),
+        "gif_fps": int(result.get("gif_fps", 20)),
+        "gif_duration_seconds": float(result.get("gif_duration_seconds", 0.0)),
+        "wall_time_seconds": result.get("wall_time_seconds"),
         "max_steps": max_steps,
     }
+
+
+def _compose_scene_description(description: str, theme: str | None) -> str:
+    trimmed_description = description.strip()
+    trimmed_theme = (theme or "").strip()
+    if not trimmed_theme:
+        return trimmed_description
+
+    lowered_description = trimmed_description.lower()
+    lowered_theme = trimmed_theme.lower()
+    if lowered_theme in lowered_description:
+        return trimmed_description
+
+    if trimmed_description:
+        return f"{trimmed_theme}. {trimmed_description}"
+    return trimmed_theme
 
 
 def create_app() -> FastAPI:
@@ -435,6 +497,7 @@ def create_app() -> FastAPI:
             "ok": True,
             "model": MODEL_PATH,
             "max_steps": MAX_STEPS,
+            "generated_max_steps": GENERATED_MAX_STEPS,
             "assist_scale": ASSIST_SCALE,
             "balance_assist_scale": BALANCE_ASSIST_SCALE,
         }
@@ -564,15 +627,16 @@ def create_app() -> FastAPI:
 
     @app.post("/generate-prompt")
     def generate_prompt(req: GeneratePromptRequest) -> dict:
-        survivor_count = max(1, min(6, int(req.survivor_count)))
-        theme = (req.theme or "urban collapse").strip() or "urban collapse"
+        survivor_count = 1
         profiles = normalize_survivor_profiles(survivor_count, None)
-        prompt = (
-            f"{theme}. Generate a {req.difficulty} disaster rescue scene with "
-            f"{survivor_count} survivor{'s' if survivor_count != 1 else ''}. "
-            "Include dense rubble, hazards, a reachable robot start, and clear "
-            "priority differences between survivors."
-        )
+        try:
+            prompt = generate_scene_prompt(
+                difficulty=req.difficulty,
+                survivor_count=survivor_count,
+                theme=req.theme,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
         return {
             "prompt": prompt,
             "agent_prompt": build_generation_prompt(
@@ -585,12 +649,12 @@ def create_app() -> FastAPI:
 
     @app.post("/generate-scene")
     async def generate_scene(req: GenerateSceneRequest) -> dict:
-        description = req.description.strip()
+        description = _compose_scene_description(req.description, req.theme)
         if not description:
             raise HTTPException(status_code=400, detail="description is required")
 
-        survivor_count = max(1, min(6, int(req.survivor_count)))
-        max_steps = req.max_steps or MAX_STEPS
+        survivor_count = 1
+        max_steps = _episode_steps(req.max_steps, GENERATED_MAX_STEPS)
 
         try:
             scene = await asyncio.to_thread(
@@ -601,7 +665,8 @@ def create_app() -> FastAPI:
                 req.difficulty,
             )
             env_scene = scene_spec_to_env_scene(scene)
-            env_scene["name"] = f"generated_{int(time.time())}"
+            scene_id = f"generated_{int(time.time())}_{uuid4().hex[:8]}"
+            env_scene["name"] = scene_id
             eval_result = _score_generated_scene(scene, env_scene)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -632,20 +697,59 @@ def create_app() -> FastAPI:
             finally:
                 _release_cancel(key, cancel_event)
 
-        return {
+        payload = {
+            "scene_id": scene_id,
             "scene": scene.model_dump(),
             "env_scene": env_scene,
             "eval": eval_result,
             "episode": episode,
             "episode_error": episode_error,
+            "default_max_steps": GENERATED_MAX_STEPS,
         }
+        return _save_generated_session(payload)
+
+    @app.get("/generated-scenes/{scene_id}")
+    def get_generated_scene(scene_id: str) -> dict:
+        return _load_generated_session(scene_id)
+
+    @app.post("/generated-scenes/{scene_id}/run")
+    async def run_generated_scene(scene_id: str, req: SceneRunRequest) -> dict:
+        payload = _load_generated_session(scene_id)
+        if not payload["eval"]["passed"]:
+            raise HTTPException(status_code=409, detail="scene did not pass evaluation")
+
+        max_steps = _episode_steps(req.max_steps, GENERATED_MAX_STEPS)
+        gif_name = f"{scene_id}_{int(time.time() * 1000)}.gif"
+        key = f"generate:{gif_name}"
+        cancel_event = _register_cancel(key)
+        try:
+            result = await asyncio.to_thread(
+                run_episode,
+                scene=payload["env_scene"],
+                model_path=MODEL_PATH,
+                gif_path=str(_OUTPUT / gif_name),
+                max_steps=max_steps,
+                assist_scale=ASSIST_SCALE,
+                balance_assist_scale=BALANCE_ASSIST_SCALE,
+                cancel_event=cancel_event,
+            )
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=500, detail=f"model not found: {e}") from e
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+        finally:
+            _release_cancel(key, cancel_event)
+
+        payload["episode"] = _episode_response(result, f"/gifs/{gif_name}", max_steps)
+        payload["episode_error"] = None
+        return _save_generated_session(payload)
 
     @app.post("/scene/{idx}/run")
     async def run_scene(idx: int, req: SceneRunRequest) -> dict:
         if idx < 0 or idx >= len(GENERATED_SCENES):
             raise HTTPException(status_code=404, detail=f"scene {idx} not found")
 
-        max_steps = req.max_steps or MAX_STEPS
+        max_steps = _episode_steps(req.max_steps, MAX_STEPS)
         key = f"scene:{idx}"
         cancel_event = _register_cancel(key)
         try:

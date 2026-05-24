@@ -44,6 +44,8 @@ type EnvScene = {
 };
 
 type SceneResult = {
+  scene_id: string;
+  default_max_steps: number;
   scene: {
     description: string;
     difficulty: string;
@@ -59,11 +61,11 @@ type SceneResult = {
 };
 
 const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
+const SURVIVOR_COUNT = 1;
 
 export default function GeneratePage() {
   const [description, setDescription] = useState('');
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
-  const [survivorCount, setSurvivorCount] = useState(2);
   const [skipEpisode, setSkipEpisode] = useState(false);
   const [theme, setTheme] = useState('');
   const [promptLoading, setPromptLoading] = useState(false);
@@ -71,18 +73,49 @@ export default function GeneratePage() {
   const [result, setResult] = useState<SceneResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
+  async function runSceneGeneration(sceneDescription: string) {
+    const trimmedDescription = sceneDescription.trim();
+    if (!trimmedDescription) return;
+
+    setStatus('loading');
+    setResult(null);
+    setErrorMsg('');
+
+    const res = await fetch('/generate-scene', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        description: trimmedDescription,
+        difficulty,
+        survivor_count: SURVIVOR_COUNT,
+        theme: theme.trim() || null,
+        skip_episode: skipEpisode,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    const data: SceneResult = await res.json();
+    setResult(data);
+    setStatus('done');
+  }
+
   async function handleGeneratePrompt() {
     setPromptLoading(true);
+    setErrorMsg('');
     try {
       const res = await fetch('/generate-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty, survivor_count: survivorCount, theme }),
+        body: JSON.stringify({ difficulty, survivor_count: SURVIVOR_COUNT, theme }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
       const data = await res.json();
       setDescription(data.prompt);
+      await runSceneGeneration(data.prompt);
     } catch (e) {
+      setStatus('error');
       setErrorMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setPromptLoading(false);
@@ -90,29 +123,8 @@ export default function GeneratePage() {
   }
 
   async function handleGenerate() {
-    if (!description.trim()) return;
-    setStatus('loading');
-    setResult(null);
-    setErrorMsg('');
-
     try {
-      const res = await fetch('/generate-scene', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: description.trim(),
-          difficulty,
-          survivor_count: survivorCount,
-          skip_episode: skipEpisode,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || res.statusText);
-      }
-      const data: SceneResult = await res.json();
-      setResult(data);
-      setStatus('done');
+      await runSceneGeneration(description);
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : String(e));
       setStatus('error');
@@ -129,20 +141,24 @@ export default function GeneratePage() {
   const visualization = result
     ? (() => {
         const active = result.env_scene.active_survivor?.pos ?? result.env_scene.survivor_pos;
-        const alternate = result.env_scene.survivors?.find((s) => !s.active)?.pos ?? active;
+        const survivorType = (result.env_scene.active_survivor?.type ?? 'child').toLowerCase();
+        const isChild = survivorType === 'child' || survivorType === 'baby';
         const trajectory = result.episode?.trajectory ?? null;
         const finalPoint = trajectory?.[trajectory.length - 1] ?? result.env_scene.robot_start;
         const previousPoint = trajectory && trajectory.length > 1
           ? trajectory[trajectory.length - 2]
           : result.env_scene.robot_start;
         const heading = Math.atan2(finalPoint[1] - previousPoint[1], finalPoint[0] - previousPoint[0]) * 180 / Math.PI;
+        const offMap = { x: 999, y: 999 };
+        const activePos = { x: active[0], y: active[1] };
         return {
+          targetName: isChild ? 'CHILD' as const : 'ADULT' as const,
           robotPos: { x: finalPoint[0], y: finalPoint[1] },
           heading: Number.isFinite(heading) ? heading : 0,
           trajectory,
           survivors: {
-            CHILD: { x: active[0], y: active[1] },
-            ADULT: { x: alternate[0], y: alternate[1] },
+            CHILD: isChild ? activePos : offMap,
+            ADULT: isChild ? offMap : activePos,
           },
         };
       })()
@@ -216,7 +232,7 @@ export default function GeneratePage() {
               value={description}
               onChange={e => setDescription(e.target.value)}
               rows={3}
-              placeholder="e.g. Collapsed apartment building after earthquake, two survivors trapped in rubble"
+              placeholder="e.g. Collapsed apartment building after earthquake, one survivor trapped in rubble"
               style={{
                 width: '100%',
                 background: 'var(--bg)',
@@ -255,30 +271,6 @@ export default function GeneratePage() {
                   <option key={d} value={d}>{d.toUpperCase()}</option>
                 ))}
               </select>
-            </div>
-
-            <div style={{ flex: '1 1 140px' }}>
-              <label style={{ display: 'block', fontSize: 11, fontFamily: 'monospace', color: 'var(--ink-dim)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
-                Survivors
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={6}
-                value={survivorCount}
-                onChange={e => setSurvivorCount(Math.max(1, Math.min(6, Number(e.target.value))))}
-                style={{
-                  width: '100%',
-                  background: 'var(--bg)',
-                  border: '1px solid var(--rule)',
-                  borderRadius: 4,
-                  color: 'var(--ink)',
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                  padding: '8px 10px',
-                  boxSizing: 'border-box',
-                }}
-              />
             </div>
 
             <div style={{ flex: '1 1 200px', display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
@@ -327,7 +319,7 @@ export default function GeneratePage() {
                   <ThreeArena
                     robotPos={visualization.robotPos}
                     robotHeading={visualization.heading}
-                    activeTarget="CHILD"
+                    activeTarget={visualization.targetName}
                     trajectory={visualization.trajectory}
                     obstacles={result.env_scene.obstacles}
                     hazards={result.env_scene.hazards}
@@ -394,7 +386,7 @@ export default function GeneratePage() {
                     <h2>Generated Scene Response</h2>
                     <p>Animated rollout and initial deployment-readiness statistics for this scene.</p>
                   </div>
-                  <Link href="/console" className="btn-secondary">
+                  <Link href={`/console?scene_id=${encodeURIComponent(result.scene_id)}`} className="btn-secondary">
                     Open Interactive Console
                   </Link>
                 </div>
@@ -432,6 +424,18 @@ export default function GeneratePage() {
             {result.episode_error && (
               <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--red)', padding: '8px 0' }}>
                 Episode error: {result.episode_error}
+              </div>
+            )}
+
+            {result.eval.passed && !result.episode && (
+              <div className="generated-console-invite">
+                <div>
+                  <span className="generated-eyebrow mono">03 / POLICY PLAYBACK</span>
+                  <strong>Scene is ready for an interactive extended run.</strong>
+                </div>
+                <Link href={`/console?scene_id=${encodeURIComponent(result.scene_id)}`} className="btn-secondary">
+                  Open Interactive Console
+                </Link>
               </div>
             )}
 

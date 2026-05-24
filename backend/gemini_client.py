@@ -10,6 +10,38 @@ SURVIVORS = {
 }
 
 
+def generate_scene_prompt(
+    *,
+    difficulty: str,
+    survivor_count: int,
+    theme: str | None,
+) -> str:
+    prompt_theme = (theme or "").strip()
+    fallback_theme = prompt_theme or "urban collapse"
+    fallback = (
+        f"{fallback_theme}. Generate a {difficulty} disaster rescue scene with "
+        f"{survivor_count} survivor{'s' if survivor_count != 1 else ''}. Include dense rubble, "
+        "hazards, and a reachable robot start."
+    )
+
+    configure_google_api_key()
+    agent = ManagedAgent(
+        agent_id="rescue-scene-prompt-writer",
+        system_prompt=_scene_prompt_system_prompt(),
+        base_agent=DEFAULT_MODEL,
+        description="Writes concise rescue-scene generation prompts.",
+    )
+    response_text = agent.run_text(
+        _scene_prompt_user_prompt(
+            difficulty=difficulty,
+            survivor_count=survivor_count,
+            theme=prompt_theme,
+        )
+    )
+    cleaned = _clean_text_response(response_text)
+    return cleaned or fallback
+
+
 def get_gemini_target(command: str, survivors: dict) -> dict:
     """Return {"target_id": str, "confidence": float, "reason": str} via ADK."""
     try:
@@ -59,6 +91,29 @@ def _target_user_prompt(command: str) -> str:
     return f'Natural language command: "{command}"'
 
 
+def _scene_prompt_system_prompt() -> str:
+    return """You write one concise natural-language prompt for a rescue-scene generator.
+Return plain text only.
+Keep it to one sentence.
+Describe the environment, collapse pattern, hazards, survivor situation, and traversal constraints.
+If the user supplied a theme hint, use it as the primary setting and visual motif."""
+
+
+def _scene_prompt_user_prompt(
+    *,
+    difficulty: str,
+    survivor_count: int,
+    theme: str,
+) -> str:
+    theme_text = theme if theme else "No theme hint was supplied."
+    return (
+        f"Difficulty: {difficulty}\n"
+        f"Survivor count: {survivor_count}\n"
+        f"Theme hint: {theme_text}\n"
+        "Write the prompt now."
+    )
+
+
 def _parse_target_response(response_text: str, survivors: dict) -> dict:
     data = json.loads(_extract_json(response_text))
     target_id = data.get("target_id")
@@ -97,6 +152,18 @@ def _extract_json(response_text: str) -> str:
     if start == -1 or end == -1 or end < start:
         raise ValueError("Gemini response did not contain a JSON object.")
     return stripped[start : end + 1]
+
+
+def _clean_text_response(response_text: str) -> str:
+    stripped = response_text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+    return " ".join(stripped.split())
 
 
 def _fallback_target(survivors: dict) -> str:

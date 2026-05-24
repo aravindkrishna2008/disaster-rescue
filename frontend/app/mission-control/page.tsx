@@ -58,12 +58,15 @@ type RunResult = {
 
 type RunState =
   | { status: 'idle' }
+  | { status: 'queued' }
   | { status: 'running'; startedAt: number; controller: AbortController }
   | { status: 'done'; result: RunResult; finishedAt: number; cacheBust: number }
   | { status: 'error'; message: string }
   | { status: 'cancelled' };
 
 type StepPreset = { label: string; value: number };
+
+const RUN_ALL_CONCURRENCY = 2;
 
 const FALLBACK_PRESETS: StepPreset[] = [
   { label: '50k', value: 50_000 },
@@ -216,6 +219,10 @@ export default function MissionControlPage() {
     error: null,
   });
   const killedRef = useRef(false);
+  const runsRef = useRef<Record<number, RunState>>({});
+  const runAllQueueRef = useRef<number[]>([]);
+  const runAllActiveRef = useRef(0);
+  runsRef.current = runs;
 
   const [trainingElapsed, setTrainingElapsed] = useState(0);
 
@@ -262,13 +269,8 @@ export default function MissionControlPage() {
       .catch((e) => setBootError(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  const runOne = useCallback(
-    async (idx: number) => {
-      const controller = new AbortController();
-      setRuns((prev) => ({
-        ...prev,
-        [idx]: { status: 'running', startedAt: Date.now(), controller },
-      }));
+  const executeRun = useCallback(
+    async (idx: number, controller: AbortController) => {
       try {
         const res = await fetch(`/scene/${idx}/run`, {
           method: 'POST',
@@ -300,6 +302,65 @@ export default function MissionControlPage() {
     },
     [defaultMaxSteps],
   );
+
+  const pumpRunAllQueue = useCallback(() => {
+    while (
+      runAllActiveRef.current < RUN_ALL_CONCURRENCY &&
+      runAllQueueRef.current.length > 0
+    ) {
+      const idx = runAllQueueRef.current.shift()!;
+      if (runsRef.current[idx]?.status === 'running') continue;
+
+      runAllActiveRef.current += 1;
+      const controller = new AbortController();
+      setRuns((prev) => ({
+        ...prev,
+        [idx]: { status: 'running', startedAt: Date.now(), controller },
+      }));
+      void executeRun(idx, controller).finally(() => {
+        runAllActiveRef.current -= 1;
+        pumpRunAllQueue();
+      });
+    }
+  }, [executeRun]);
+
+  const runOne = useCallback(
+    (idx: number) => {
+      const state = runsRef.current[idx]?.status;
+      if (state === 'running') return;
+      if (state === 'queued') {
+        runAllQueueRef.current = runAllQueueRef.current.filter((i) => i !== idx);
+      }
+      const controller = new AbortController();
+      setRuns((prev) => ({
+        ...prev,
+        [idx]: { status: 'running', startedAt: Date.now(), controller },
+      }));
+      void executeRun(idx, controller);
+    },
+    [executeRun],
+  );
+
+  const runAll = useCallback(() => {
+    const pending = scenes
+      .map((scene) => scene.index)
+      .filter((idx) => {
+        const state = runsRef.current[idx]?.status;
+        return state !== 'running' && state !== 'queued';
+      });
+    if (pending.length === 0) return;
+
+    setRuns((prev) => {
+      const next = { ...prev };
+      for (const idx of pending) {
+        next[idx] = { status: 'queued' };
+      }
+      return next;
+    });
+
+    runAllQueueRef.current.push(...pending);
+    pumpRunAllQueue();
+  }, [scenes, pumpRunAllQueue]);
 
   const startTrain = useCallback(async () => {
     if (train.status === 'running') return;
@@ -355,6 +416,7 @@ export default function MissionControlPage() {
   const killAll = useCallback(async () => {
     if (killing) return;
     killedRef.current = true;
+    runAllQueueRef.current = [];
     setKilling(true);
     setRuns((prev) => {
       const next = { ...prev };
@@ -365,6 +427,8 @@ export default function MissionControlPage() {
           } catch {
             // noop
           }
+          next[Number(key)] = { status: 'cancelled' };
+        } else if (state.status === 'queued') {
           next[Number(key)] = { status: 'cancelled' };
         }
       }
@@ -381,6 +445,12 @@ export default function MissionControlPage() {
 
   const isTraining = train.status === 'running';
   const anyRunning = isTraining || Object.values(runs).some((r) => r.status === 'running');
+  const pendingRunCount = scenes.filter((s) => {
+    const status = runs[s.index]?.status;
+    return status !== 'running' && status !== 'queued';
+  }).length;
+  const queuedRunCount = Object.values(runs).filter((r) => r.status === 'queued').length;
+  const canRunAll = !isTraining && scenes.length > 0 && pendingRunCount > 0;
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--ink)' }}>
@@ -445,6 +515,20 @@ export default function MissionControlPage() {
               : `Train PPO (${trainSteps.toLocaleString()} steps · ${FIXED_NUM_ENVS} envs)`}
           </button>
           <button
+            type="button"
+            className="btn-secondary"
+            onClick={runAll}
+            disabled={!canRunAll}
+            style={{ minWidth: 120 }}
+            title={`Run all ${FIXED_NUM_ENVS} gym environments (${RUN_ALL_CONCURRENCY} at a time)`}
+          >
+            {queuedRunCount > 0
+              ? `Batch running (${queuedRunCount} queued)`
+              : pendingRunCount < scenes.length && pendingRunCount > 0
+                ? `Run All (${pendingRunCount})`
+                : 'Run All'}
+          </button>
+          <button
             className="btn-danger"
             onClick={killAll}
             disabled={!anyRunning || killing}
@@ -481,6 +565,7 @@ export default function MissionControlPage() {
         {scenes.map((scene) => {
           const state: RunState = runs[scene.index] ?? { status: 'idle' };
           const isRunning = state.status === 'running';
+          const isQueued = state.status === 'queued';
           const isDone = state.status === 'done';
           const isErr = state.status === 'error';
           const routeStats = isDone ? getRouteStats(scene, state.result) : null;
@@ -515,6 +600,7 @@ export default function MissionControlPage() {
                 {state.status === 'idle' && (
                   <div className="mc-placeholder">no run yet · press Run</div>
                 )}
+                {isQueued && <div className="mc-placeholder mc-running">queued…</div>}
                 {isRunning && <div className="mc-placeholder mc-running">running episode…</div>}
                 {isDone && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -558,9 +644,9 @@ export default function MissionControlPage() {
                 <button
                   className="mc-run-btn"
                   onClick={() => runOne(scene.index)}
-                  disabled={isRunning || isTraining}
+                  disabled={isRunning || isQueued || isTraining}
                 >
-                  {isRunning ? '…' : isDone ? 'Re-run' : 'Run'}
+                  {isRunning ? '…' : isQueued ? 'queued' : isDone ? 'Re-run' : 'Run'}
                 </button>
               </footer>
 

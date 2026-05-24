@@ -21,6 +21,7 @@ Returns:
 import argparse
 import os
 import threading
+import time
 import numpy as np
 import imageio
 from stable_baselines3 import PPO
@@ -69,6 +70,7 @@ def run_episode(
         curriculum_stage=curriculum_stage,
         assist_scale=assist_scale,
         balance_assist_scale=balance_assist_scale,
+        max_steps=max_steps,
     )
     obs, _ = env.reset()
 
@@ -86,9 +88,12 @@ def run_episode(
     final_info = {}
     cancelled = False
     detection_event = None
-    record_rollout = False
+    started_at = time.perf_counter()
 
     for _ in range(max_steps):
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
         # Capture frame before step (so first frame shows start pose)
         frame = env.render()
         if frame is not None:
@@ -144,6 +149,7 @@ def run_episode(
     if frames:
         imageio.mimsave(gif_path, frames, fps=GIF_FPS, loop=0)
 
+    duration_seconds = time.perf_counter() - started_at
     result = {
         "trajectory": trajectory,
         "reached": reached,
@@ -167,6 +173,20 @@ def run_episode(
         "balance_assist_scale": round(float(final_info.get("balance_assist_scale", balance_assist_scale)), 3),
         "detection_event": detection_event,
         "cancelled": cancelled,
+        "frame_count": len(frames),
+        "gif_fps": GIF_FPS,
+        "gif_duration_seconds": round(len(frames) / GIF_FPS, 2),
+        "wall_time_seconds": round(duration_seconds, 3),
+        "max_steps": max_steps,
+        "completion_reason": (
+            "cancelled"
+            if cancelled
+            else "target_reached"
+            if reached
+            else "fallen"
+            if fallen
+            else "step_budget_exhausted"
+        ),
     }
     if record_rollout:
         result["rollout"] = rollout

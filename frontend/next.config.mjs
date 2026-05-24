@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    // Episode rollouts can take several minutes; avoid dev-proxy timeouts.
+    proxyTimeout: 300_000,
+  },
   async rewrites() {
     const backend = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
     return [
@@ -21,6 +25,8 @@ const nextConfig = {
       { source: '/health', destination: `${backend}/health` },
       { source: '/generate-scene', destination: `${backend}/generate-scene` },
       { source: '/generate-prompt', destination: `${backend}/generate-prompt` },
+      { source: '/generated-scenes/:sceneId/run', destination: `${backend}/generated-scenes/:sceneId/run` },
+      { source: '/generated-scenes/:sceneId', destination: `${backend}/generated-scenes/:sceneId` },
     ];
   },
 };

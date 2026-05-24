@@ -759,10 +759,13 @@ class DisasterEnv(gym.Env):
         assist_enabled: bool = True,
         assist_scale: float | None = None,
         balance_assist_scale: float | None = None,
+        max_steps: int = MAX_STEPS,
     ):
         super().__init__()
         if curriculum_stage not in CURRICULUM_STAGES:
             raise ValueError(f"Unknown curriculum_stage {curriculum_stage!r}")
+        if max_steps <= 0:
+            raise ValueError("max_steps must be positive")
         self.scene = dict(scene or DEFAULT_SCENE)
         self._terrain = _normalize_terrain(
             self.scene.get("terrain"),
@@ -777,6 +780,7 @@ class DisasterEnv(gym.Env):
             balance_assist_scale = self.assist_scale
         self.balance_assist_scale = float(np.clip(balance_assist_scale, 0.0, 1.0))
         self.assist_enabled = self.assist_scale > 0.0 or self.balance_assist_scale > 0.0
+        self.max_steps = int(max_steps)
         self._step_count = 0
         self._prev_dist = 0.0
         self._prev_guide_dist = 0.0
@@ -1447,7 +1451,7 @@ class DisasterEnv(gym.Env):
         alive = self._is_alive()
         reached = alive and self.curriculum_stage in NAVIGATION_STAGES and dist < REACH_DIST
         terminated = reached or not alive
-        truncated = self._step_count >= MAX_STEPS
+        truncated = self._step_count >= self.max_steps
         obstacle_contacts = self._obstacle_contacts_this_step()
         self._obstacle_contact_count += obstacle_contacts
         obstacle_clearance, hazard_clearance = self._clearance_metrics()
